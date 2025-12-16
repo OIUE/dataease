@@ -139,7 +139,7 @@ export abstract class G2PlotChartView<
   }
 
   protected configAnalyseHorizontal(chart: Chart, options: O): O {
-    const annotations = getAnalyseHorizontal(chart)
+    const annotations = [...(options.annotations ?? []), ...getAnalyseHorizontal(chart)]
     return { ...options, annotations }
   }
 
@@ -170,7 +170,7 @@ export abstract class G2PlotChartView<
   public setupSeriesColor(chart: ChartObj, data?: any[]): ChartBasicStyle['seriesColor'] {
     return setupSeriesColor(chart, data)
   }
-
+  // eslint-disable-next-line
   public setupSubSeriesColor(chart: ChartObj, data?: any[]): ChartBasicStyle['seriesColor'] {
     return undefined
   }

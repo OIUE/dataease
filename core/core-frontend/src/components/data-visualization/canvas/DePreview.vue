@@ -100,6 +100,11 @@ const props = defineProps({
   showLinkageButton: {
     type: Boolean,
     default: true
+  },
+  outerScreenAdaptor: {
+    type: String,
+    required: false,
+    default: null
   }
 })
 
@@ -115,7 +120,8 @@ const {
   outerScale,
   outerSearchCount,
   showPopBar,
-  fontFamily
+  fontFamily,
+  outerScreenAdaptor
 } = toRefs(props)
 const domId = 'preview-' + canvasId.value
 const scaleWidthPoint = ref(100)
@@ -136,12 +142,16 @@ const state = reactive({
   scrollMain: 0
 })
 
+const screenAdaptor = computed(() => {
+  return outerScreenAdaptor.value || canvasStyleData.value?.screenAdaptor
+})
+
 const curSearchCount = computed(() => {
   return outerSearchCount.value + searchCount.value
 })
 // 大屏是否保持宽高比例 非全屏 full 都需要保持宽高比例
 const dataVKeepRadio = computed(() => {
-  return canvasStyleData.value?.screenAdaptor !== 'full'
+  return screenAdaptor.value !== 'full'
 })
 
 // 仪表板是否跟随宽度缩放 非全屏 full 都需要保持宽高比例
@@ -176,27 +186,60 @@ const canvasStyle = computed(() => {
   }
   if (canvasStyleData.value && canvasStyleData.value.width && isMainCanvas(canvasId.value)) {
     style = getCanvasStyle(canvasStyleData.value)
-    if (canvasStyleData.value?.screenAdaptor === 'keep') {
+    if (screenAdaptor.value === 'keep') {
       style['height'] = canvasStyleData.value?.height + 'px'
       style['width'] = canvasStyleData.value?.width + 'px'
       style['margin'] = 'auto'
+    } else if (screenAdaptor.value === 'keepProportion') {
+      style['aspect-ratio'] = canvasStyleData.value?.width / canvasStyleData.value?.height
+      style['height'] = 'auto'
+      style['width'] = 'auto'
     } else {
       style['height'] = dashboardActive.value
         ? downloadStatus.value
           ? getDownloadStatusMainHeight()
           : '100%'
-        : !canvasStyleData.value?.screenAdaptor ||
-          canvasStyleData.value?.screenAdaptor === 'widthFirst'
+        : !screenAdaptor.value || screenAdaptor.value === 'widthFirst'
         ? changeStyleWithScale(canvasStyleData.value?.height, scaleMin.value) + 'px'
         : '100%'
       style['width'] =
-        !dashboardActive.value && canvasStyleData.value?.screenAdaptor === 'heightFirst'
+        !dashboardActive.value && screenAdaptor.value === 'heightFirst'
           ? changeStyleWithScale(canvasStyleData.value?.width, scaleHeightPoint.value) + 'px'
           : '100%'
     }
   }
   return style
 })
+
+const getDownloadStatusMainHeightV2 = () => {
+  if (!previewCanvas.value?.childNodes) {
+    nextTick(() => {
+      canvasStyle.value.height = getDownloadStatusMainHeight()
+    })
+    return '100%'
+  }
+  const children = previewCanvas.value.childNodes
+  let maxBottomPosition = 0
+
+  children.forEach(child => {
+    // 获取style中的top值
+    const styleTop = child.style?.top || 0
+    // 获取style中的height
+    const styleHeight = child.style?.height || 0
+
+    // 转换为数字
+    const top = parseFloat(styleTop) || 0
+    const height = parseFloat(styleHeight) || 0
+
+    // 计算底部位置
+    const bottomPosition = top + height
+
+    if (bottomPosition > maxBottomPosition) {
+      maxBottomPosition = bottomPosition
+    }
+  })
+  return `${maxBottomPosition}px`
+}
 
 const getDownloadStatusMainHeight = () => {
   if (!previewCanvas.value?.childNodes) {
@@ -468,8 +511,7 @@ const dataVPreview = computed(
 const linkOptBarShow = computed(() => {
   return Boolean(
     canvasStyleData.value.suspensionButtonAvailable &&
-      !inMobile.value &&
-      !mobileInPc.value &&
+      ((!inMobile.value && !mobileInPc.value) || !isDashboard()) &&
       showPopBar.value &&
       !isDesktopFlag
   )
@@ -483,8 +525,21 @@ const scrollPreview = () => {
   state.scrollMain = previewCanvas.value.scrollTop
 }
 
+const showUnpublishFlag = computed(() => dvInfo.value?.status === 0 && isMainCanvas(canvasId.value))
+const getPreviewCanvasSize = () => {
+  return {
+    innerWidth: previewCanvas.value.clientWidth,
+    innerHeight: previewCanvas.value.clientHeight
+  }
+}
+const isFixedFlag = computed(
+  () => isOverSize.value && canvasStyleData.value?.screenAdaptor !== 'keep'
+)
+
 defineExpose({
-  restore
+  restore,
+  getPreviewCanvasSize,
+  getDownloadStatusMainHeightV2
 })
 </script>
 
@@ -493,7 +548,11 @@ defineExpose({
     :id="domId"
     class="canvas-container"
     :style="canvasStyle"
-    :class="{ 'de-download-custom': downloadStatus, 'datav-preview': dataVPreview }"
+    :class="{
+      'de-download-custom': downloadStatus,
+      'datav-preview': dataVPreview,
+      'datav-preview-unpublish': showUnpublishFlag
+    }"
     ref="previewCanvas"
     @mousedown="handleMouseDown"
     @scroll="scrollPreview"
@@ -518,9 +577,9 @@ defineExpose({
       :canvas-id="canvasId"
       :canvas-style-data="canvasStyleData"
       :component-data="baseComponentData"
-      :is-fixed="isOverSize"
+      :is-fixed="isFixedFlag"
     ></canvas-opt-bar>
-    <template v-if="renderReady && dvInfo?.status !== 0">
+    <template v-if="renderReady && !showUnpublishFlag">
       <component-wrapper
         v-for="(item, index) in baseComponentData"
         v-show="item.isShow"
@@ -528,6 +587,7 @@ defineExpose({
         :canvas-id="canvasId"
         :canvas-style-data="canvasStyleData"
         :dv-info="dvInfo"
+        :cur-style="getShapeItemShowStyle(item)"
         :canvas-view-info="canvasViewInfo"
         :view-info="canvasViewInfo[item.id]"
         :key="index"
@@ -546,7 +606,7 @@ defineExpose({
       />
     </template>
     <empty-background
-      v-if="dvInfo?.status === 0"
+      v-if="showUnpublishFlag"
       :description="t('visualization.resource_not_published')"
       img-type="none"
     >
@@ -590,5 +650,9 @@ defineExpose({
 
 .datav-preview {
   overflow-y: hidden !important;
+}
+
+.datav-preview-unpublish {
+  background-color: inherit !important;
 }
 </style>

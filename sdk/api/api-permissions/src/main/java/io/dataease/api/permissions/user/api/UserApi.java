@@ -52,6 +52,10 @@ public interface UserApi {
     @GetMapping("/personInfo")
     UserFormVO personInfo();
 
+    @Operation(summary = "查询用户系统变量信息")
+    @GetMapping("/personSysVariableInfo/{id}")
+    UserGridVO personSysVariableInfo(@PathVariable("id") Long id);
+
     @Operation(summary = "查询客户端IP信息")
     @GetMapping("/ipInfo")
     CurIpVO ipInfo();
@@ -59,7 +63,7 @@ public interface UserApi {
     @Operation(summary = "创建")
     @DePermit("m:read")
     @PostMapping("/create")
-    void create(@RequestBody UserCreator creator);
+    Long create(@RequestBody UserCreator creator);
 
     @Operation(summary = "创建第三方用户")
     @DePermit("m:read")
@@ -175,6 +179,10 @@ public interface UserApi {
     @Hidden
     @PostMapping("/all")
     List<UserItem> allUser(@RequestBody KeywordRequest request);
+
+    @Hidden
+    @PostMapping("/admin/bind")
+    void adminBind(@RequestBody AdminBindRequest request);
 
     @Hidden
     @PostMapping("/bind")

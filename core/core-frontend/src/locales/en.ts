@@ -1,6 +1,28 @@
 export default {
   common: {
+    display_formats: 'Display Formats',
+    dropdown_display: 'Drop-down Display',
+    tile_display: 'Tile Display',
+    month_to_yesterday: 'From the beginning of the month to yesterday',
+    to_this_month: 'From the beginning of the year to this month',
+    up_to_options: 'Display up to 1000 options',
+    next_week: 'Next week',
+    next_month: 'Next month',
+    next_quarter: 'Next quarter',
+    next_year: 'Next year',
+    sqlbot_settings: 'SQLBot Settings',
+    third_party_embed: 'Third-party embed',
+    application_id: 'Application ID',
+    sqlbot_server_url: 'SQLBot server URL',
+    enter_the_url: 'Please enter the URL',
+    the_application_id: 'Please enter the application ID',
+    embed: 'Embed',
     empty: ' ',
+    first_item: 'First Item',
+    cross_source: 'Cross-source',
+    single_source: 'Single-source',
+    source_tips:
+      'The data set is cross-source. Please check the syntax of other SQL nodes to confirm whether the type should be changed to single-source?',
     associated_chart: 'Associated chart',
     associated_chart_first: 'First level associated chart',
     changing_the_display:
@@ -294,6 +316,7 @@ export default {
     time_function: 'Time function',
     customize: 'Customize',
     that_day: 'That day',
+    timestamp: 'current time (timestamp)',
     value: 'Value',
     name_use_parameters: "You can use ${'{'}parameter name{'}'}, use parameters",
     add_parameters: 'Add parameters',
@@ -533,6 +556,7 @@ export default {
     website_name: 'Website name',
     web_page_tab: 'Platform name displayed on web page tab',
     under_product_logo: 'Slogan under product logo',
+    slogan_content: 'Slogan content',
     footer: 'Footer',
     footer_content: 'Footer content',
     platform_settings: 'Platform settings',
@@ -603,6 +627,8 @@ export default {
     field_mapping: 'Field Mapping',
     oauth2name:
       'For example: {\'{\'}"account": "oauth2Account", "name": "oauth2Name", "email": "email"{\'}\'}',
+    saml2name:
+      'For example: {\'{\'}"account": "saml2Account", "name": "saml2Name", "email": "email"{\'}\'}',
     oidc_settings: 'OIDC Settings',
     test_mail_recipient: 'Only used as a test email recipient',
     to_enable_ssl: 'If the SMTP port is 465, you usually need to enable SSL',
@@ -683,7 +709,12 @@ export default {
     delete_custom_area_tip:
       'This operation will cause the map using the custom area to fail to display normally, are you sure to delete?',
     please_select_area: 'Please select an area',
-    delete_custom_sub_area_tip: 'Are you sure you want to delete this custom area?'
+    delete_custom_sub_area_tip: 'Are you sure you want to delete this custom area?',
+    saml: {
+      title: 'SAML2 Settings',
+      request: 'Enable Request Signing',
+      assertion: 'Enable Assertion Signing'
+    }
   },
   components: {
     dashboard_style: 'Dashboard style',
@@ -717,7 +748,8 @@ export default {
     upload_a_cover: 'Please upload a cover',
     edit_theme: 'Edit theme',
     cover: 'Cover',
-    to_delete_: 'Are you sure you want to delete [{0}]?'
+    to_delete_: 'Are you sure you want to delete [{0}]?',
+    to_delete_variable: 'Are you sure you want to delete {0}?'
   },
   user: {
     change_password: 'Change Password',
@@ -769,6 +801,7 @@ export default {
     than_end_time: ', Cannot be greater than the end time:',
     variable: 'Variable',
     variable_value: 'Variable value',
+    variable_desc: 'Describe',
     enter_a_value: 'Please enter a value',
     contact_the_administrator: 'If the execution fails, please contact the administrator',
     data_import_successful: 'Import data successfully',
@@ -1147,6 +1180,10 @@ export default {
     has_same_ds: 'There is a Datasource with the same configuration, confirm to save? ',
     app_token: 'app_token',
     input_app_token: 'Please enter the app_token',
+    doc_id: 'doc_id',
+    input_doc_id: 'Please enter the doc_id',
+    sheet_id: 'sheet_id',
+    input_sheet_id: 'Please select a worksheet',
     table_id: 'table_id',
     input_table_id: 'Please select a data table',
     view_id: 'view_id',
@@ -1381,6 +1418,7 @@ export default {
     table_title_fontsize: 'Header font size',
     table_item_fontsize: 'Table font size',
     table_header_bg: 'Header Bg',
+    table_header_row_bg: 'Header&Row Bg',
     table_item_bg: 'Table Bg',
     table_header_font_color: 'Header font',
     table_item_font_color: 'Table font',
@@ -1792,6 +1830,9 @@ export default {
     dimension_text_style: 'Name style',
     dimension_letter_space: 'Name letter spacing',
     name_value_spacing: 'Name/value spacing',
+    name_position: 'Position',
+    name_position_top: 'Top',
+    name_position_bottom: 'Bottom',
     font_family: 'Font',
     letter_space: 'Letter spacing',
     font_shadow: 'Font shadow',
@@ -1866,7 +1907,7 @@ export default {
     end_point: 'Ending point',
     line: 'Line',
     map_style: 'Map style',
-    map_style_url: 'Map style URL',
+    map_style_url: 'Map style URL/ID',
     map_pitch: 'Pitch',
     map_rotation: 'Rotation',
     map_style_normal: 'Standard',
@@ -1938,6 +1979,7 @@ export default {
     radiusColumnBar: 'Column',
     rightAngle: 'Right angle',
     roundAngle: 'Rounded angle',
+    topRoundAngle: 'Top rounded angle',
     table_layout_mode: 'Display form',
     table_layout_grid: 'Tile display',
     table_layout_tree: 'Tree display',
@@ -1972,7 +2014,7 @@ export default {
     merge_group: 'Merge group',
     table_header_group_config_tip:
       'Field additions, deletions, positional changes, and explicit and implicit modifications can cause grouping to become invalid.',
-    group_name_edit_tip: 'Group names are 1-20 characters in length',
+    group_name_edit_tip: 'Group names are 1-50 characters in length',
     group_name_error_tip: 'Please input valid group name',
     merge_cells: 'Merge cells',
     length_limit: 'Length limit',
@@ -2080,10 +2122,17 @@ export default {
     last_item: 'Last item',
     legend_sort: 'Legend Sort',
     quota_position: 'Quota Position',
-    quota_position_col: 'Col',
+    quota_position_col: 'Column',
     quota_position_row: 'Row',
+    quota_col_label: 'Quota Column Label',
     table_grand_total_label: 'Total Alias',
-    table_field_total_label: 'Field Alias'
+    table_field_total_label: 'Field Alias',
+    table_row_header_freeze: 'Row Header Freeze',
+    value_formatter_total_out_percent: 'Show percentage',
+    enable_slider_tip: 'After enabling the slider, the carousel prompt will be disabled.',
+    liquid_show_border: 'Show Border',
+    liquid_border_width: 'Border Width',
+    liquid_border_distance: 'Border Distance'
   },
   dataset: {
     field_value: 'Field Value',
@@ -2099,7 +2148,7 @@ export default {
     select_year: 'Select year',
     sql_variable_limit_1: '1. SQL variables can only be used in WHERE conditions',
     sql_variable_limit_2:
-      "2. Example: select * from table_name where col_name1='${'{'}param_name1{'}'}' and col_name2 in (${'{'}param_name2{'}'})",
+      "2. select * from table where $DE_PARAM{'{'} name = substring('$[PARAM1]',1,5){'}'} and $DE_PARAM{'{'} name in ($[PARAM2]) {'}'}",
     select_month: 'Select month',
     select_date: 'Select date',
     select_time: 'Select time',
@@ -2457,9 +2506,11 @@ export default {
     Professional: 'Professional Edition',
     Embedded: 'Embedded Edition',
     support: 'Get technical support',
-    update_success: 'Update successful',
+    update_success: 'Update successful, please log in again',
     serial_no: 'Serial number',
-    remark: 'Remark'
+    remark: 'Remark',
+    back_community: 'Revert to Community Edition',
+    confirm_tips: 'Are you sure you want to restore to the community edition? '
   },
   cron: {
     second: 'Seconds',
@@ -2775,7 +2826,8 @@ export default {
       no_children_text: 'No child nodes',
       no_options_text: 'No available options',
       no_results_text: 'No matching results'
-    }
+    },
+    char_count_limit: 'Cannot exceed {count} characters'
   },
   sql_variable: {
     variable_mgm: 'Parameter settings'
@@ -2786,7 +2838,7 @@ export default {
     msg_center: 'Message center',
     to_be_filled: 'To be filled',
     the_minimum_value:
-      'The maximum value of the numerical interval must be greater than the minimum value',
+      'The maximum value of the numerical interval must be greater than or equal to the minimum value',
     before_querying:
       'The query condition is required, please set the option value before querying! ',
     here_or_click: 'Drag the field on the right here or click',
@@ -2816,7 +2868,7 @@ export default {
     must_be_met:
       "Based on  the current component's condition, if cascade configuration is required, the following conditions must be met:",
     select_data_set:
-      '1. Display type: text and number drop-down component; 2. Option value source: select Dataset',
+      '1. Display type: Text dropdown component and numeric dropdown component, dropdown tree; 2. Source of option values: Selection dataset',
     add_cascade_configuration: 'Add cascade configuration',
     add_cascade_condition: 'Add cascade condition',
     query_condition_level: 'Level',
@@ -2893,22 +2945,40 @@ export default {
     column_name: 'Field name'
   },
   visualization: {
+    number_formatter: 'Number Content Format',
+    jump_dialog_background: 'Dialog Background Color',
+    jump_dialog_button: 'Dialog Font Color',
+    sqlbot_query_tips: 'Smart Data Query',
+    cur_sq_dataset: 'Currently selected dataset:',
+    data_match_type: 'Data match type',
+    select_resource: 'Select {0}',
+    change_screen_page: 'Change {0}',
+    new_screen_page: 'New page',
+    screen_page: 'Page',
+    color_setting: 'Color{0}',
+    decoration_name: 'Decoration {0}',
+    decoration: 'Decoration',
+    dynamic_background_name: 'Animated {0}',
+    dynamic_background: 'Animated Image',
+    support_query: 'Only query components can be added',
+    publish_update_tips: 'Update available',
     filter_freeze_tips:
       'A pinned query component already exists. Confirm switching to this component?',
     query_position: 'Query Component Position',
     default: 'Default',
     to_top: 'Pin to Top',
-    publish_recover: 'Revert to the published version',
+    publish_recover: 'Revert Publish',
     publish_tips1: 'Visible after publication',
     publish_tips2: 'Available after publication {0}',
     cancel_publish_tips: 'Successfully unpublished',
     resource_not_published: 'Resource not published',
     re_publish: 'Republish',
     published_success: 'Published successfully',
-    cancel_publish: 'Cancel publication',
+    cancel_publish: 'Cancel Publish',
     publish: 'Publish',
     freeze_top: 'Position frozen at the top',
     indicator_linkage: 'Indicator card linkage only carries chart filtering parameters',
+    indicator_jump: 'Indicator card jump only carries chart filtering parameters',
     gap_size: 'Gap Size',
     small: 'Small',
     middle: 'Medium',
@@ -2964,6 +3034,7 @@ export default {
       'If the query button is displayed, the chart query will be triggered only after clicking the button. If not displayed, the query is triggered immediately after selecting the query conditions.',
     custom_query_bg_color: 'Custom Query Background Color',
     query_condition_space: 'Query Condition Spacing',
+    query_condition_height: 'Query condition height',
     query_condition_name: 'Query Condition Name',
     condition_left: 'Left Side',
     condition_top: 'Top Side',
@@ -3012,8 +3083,11 @@ export default {
     ds_group_name: 'Dataset Group Name',
     ds_group_position: 'Dataset Group Position',
     datasource_info: 'Datasource Information',
+    dataset_info: 'Dataset Information',
     app_datasource: 'Application Datasource',
+    app_dataset: 'Application dataset',
     sys_datasource: 'System Datasource',
+    sys_dataset: 'System dataset',
     select_folder: 'Please select the associated folder',
     belong_folder: 'Belonging Folder',
     no_content: 'No relevant content found',
@@ -3021,6 +3095,7 @@ export default {
     cancel: 'Cancel',
     select_ds_group_folder: 'Please select the folder for the dataset group',
     app_no_datasource_tips: 'There are unconfigured datasources',
+    app_no_dataset_tips: 'There are unconfigured datasets',
     dataset: 'Dataset',
     delete: 'Delete',
     delete_success: 'Delete successful',
@@ -3071,7 +3146,7 @@ export default {
     query: 'Query',
     carousel: 'Carousel',
     carousel_time: 'Carousel Time(s)',
-    carousel_tips: 'Carousel will only take effect after exiting edit mode',
+    carousel_tips: 'Carousel takes effect after exiting edit mode',
     carousel_tips2: 'Carousel will be disabled after enabling conditional styling',
     background: 'Background',
     tab_title: 'Tab Title',
@@ -3083,7 +3158,7 @@ export default {
     board_radius: 'Border Radius',
     enable_event_binding: 'Enable Event Binding',
     event_binding_tips:
-      'Event binding will take effect after exiting edit mode. If rich text has event binding enabled, internal click events will be disabled',
+      'Event bindings will take effect after exiting edit mode. When rich text have event binding enabled, their internal click events will be disabled.',
     input_url_tips: 'Please enter the redirect URL',
     edit_title: 'Edit Title',
     custom_sort: 'Custom Sort',
@@ -3109,6 +3184,7 @@ export default {
     screen_adaptor_width_first: 'Width First',
     screen_adaptor_height_first: 'Height First',
     screen_adaptor_full: 'Full Screen',
+    screen_adaptor_keep_proportion: 'Keep Proportion:',
     screen_adaptor_keep: 'No Scaling',
     effective_during_preview: 'Effective during preview',
     base_config: 'Base Configuration',
@@ -3164,7 +3240,8 @@ export default {
     required: 'Required',
     default_value: 'Default Value',
     default_value_tips1: 'Please use JSON array format Example:',
-    default_value_tips2: 'Single value ["name1"], Multiple values ["name1","name2"]',
+    default_value_tips2:
+      'Single value ["name1"], multiple values ["name1","name2"]; Bind SQL custom parameters, multiple values not supported;',
     default_value_tips3: 'Please enter parameters, e.g.: ["name1"]',
     time_year_widget: 'Year Filter Widget',
     time_month_widget: 'Month Filter Widget',
@@ -3252,7 +3329,6 @@ export default {
     space_left: 'Left',
     space_width: 'Width',
     space_height: 'Height',
-    to_top: 'Move to Top',
     down: 'Download',
     mobile_style_setting: 'Style Setting',
     mobile_style_setting_tips: 'Customize mobile background',
@@ -3291,7 +3367,7 @@ export default {
     apply: 'Apply',
     apply_this_template: 'Apply This Template',
     market_network_tips:
-      'To view templates from the template market, your server must be connected to the template market (https://templates.dataease.cn). Please check your network connection...',
+      'To view templates from the template market, your server must be connected to the template market ({0}). Please check your network connection...',
     enter_name_tips: 'Please enter the dashboard name.',
     apply_template: 'App Template',
     style_template: 'Style Template',
@@ -3336,7 +3412,23 @@ export default {
     stream_mobile_tips: 'May not be displayed on IOS devices',
     json_params_error: 'Failed to parse third-party parameters. Please check the parameter format.',
     inner_padding: 'Inner Padding',
+    inner_padding_shorthand_mode: 'Mode',
+    inner_padding_shorthand_mode_uniform: 'Uniform',
+    inner_padding_shorthand_mode_axis: 'Axis',
+    inner_padding_shorthand_mode_per_edge: 'Per Edge',
+    edge_top: 'Top',
+    edge_right: 'Right',
+    edge_bottom: 'Bottom',
+    edge_left: 'Left',
     board_radio: 'Corners',
+    corner_shorthand_mode: 'Mode',
+    corner_shorthand_mode_uniform: 'Uniform',
+    corner_shorthand_mode_axis: 'Diagonal',
+    corner_shorthand_mode_per_edge: 'Per Corner',
+    corner_top_left: 'Top Left',
+    corner_top_right: 'Top Right',
+    corner_bottom_left: 'Bottom Left',
+    corner_bottom_right: 'Bottom Right',
     web_set_tips: 'Some websites may not allow embedding and will not display.',
     repeat_params: 'Duplicate parameter names exist.',
     enable_outer_param_set: 'Enable External Parameter Settings',
@@ -3700,7 +3792,15 @@ export default {
       'Unit: minutes, range: [0-1440], 0 means no time limit, starting from the first access using the ticket',
     arg_val_tips: 'Please enter parameter values',
     arg_format_tips:
-      'Please use JSON format string, example single valued [argVal], multi valued [argVal1, argVal2]'
+      'Please use JSON array format, example single valued [argVal], multi valued [argVal1, argVal2]',
+    param_error: 'Ticket parameter error!',
+    exp_error: 'Ticket has expired!',
+    disable_error: 'Sharing feature has been disabled, please contact administrator!',
+    pe_require_error: 'Expiration password is required, current link is invalid!',
+    iframe_error:
+      'Only embedded version and enterprise version support iframe embedding of public links!',
+    link_error: 'Link does not exist!',
+    link_exp_error: 'Link has expired!'
   },
   pblink: {
     key_pwd: 'Please enter the password to open the link',
@@ -3730,6 +3830,7 @@ export default {
     frontTimeOut: 'Request timeout (seconds)',
     logLiveTime: 'Operation log retention time (days)',
     thresholdLogLiveTime: 'Threshold alarm record retention time (days)',
+    dataFillingLogLiveTime: 'DataFilling operation log retention time (days)',
     exportFileLiveTime: 'Background export file retention time (days)',
     platformOid: 'Third-party platform user organization',
     platformRid: 'Third-party platform user role',
@@ -4092,7 +4193,11 @@ export default {
     time_end: 'End',
     es_query_param_formatter_error:
       'Query parameter format error, please enter the correct JSON format, please check',
-    show_task_id: 'View Task ID'
+    show_task_id: 'View Task ID',
+    offset: 'Offset',
+    offset_tip: 'Offset: negative for backward, positive for forward',
+    millisecond: 'Millisecond',
+    units: 'Unit'
   },
   watermark: {
     support_params: 'Currently supported parameters:',
@@ -4179,7 +4284,8 @@ export default {
       retrying: 'Retry on Failure',
       retrying_rate: 'Retry Interval (minutes)',
       please_input_positive_int: 'Please input a positive integer for {0}',
-      rate: 'Sending frequency'
+      rate: 'Sending frequency',
+      ext_wait_time: 'additional waiting time(s)'
     },
     filter: {
       title: 'Set Query Component Default Values',
@@ -4385,6 +4491,8 @@ export default {
       download: 'Download',
       download_template: 'Download template',
       insert_data: 'Insert data',
+      batch_insert_data: ' Batch insert data',
+      batch_insert_data_with_count: 'Batch insert data，total count: {0}',
       update_data: 'Update data',
       delete_data: 'Delete data',
       recent_committer: 'Recent committer',
@@ -4601,7 +4709,8 @@ export default {
       'After binding, you can log in by scanning the QR code through International Lark',
     bind: 'Bind',
     unbind_success: 'Unbind successfully',
-    confirm_unbind_dingtalk: 'Are you sure you want to unbind DingTalk? ',
+    confirm_unbind_dingtalk: 'Are you sure you want to unbind {0}? ',
+    unbind_error: 'Current user origin is {0}, cannot unbind',
     pls_use: 'Please use ',
     bind_use_qr: 'Scan QR code to bind',
     pls_use_dingtalk: 'Please use DingTalk to scan QR code to log in',

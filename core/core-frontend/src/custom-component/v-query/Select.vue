@@ -10,18 +10,27 @@ import {
   nextTick,
   computed,
   inject,
+  onBeforeUnmount,
   onUnmounted,
+  defineAsyncComponent,
   Ref
 } from 'vue'
 import { enumValueObj, type EnumValue, getEnumValue } from '@/api/dataset'
 import { cloneDeep, debounce } from 'lodash-es'
+import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
+import Flat from './Flat.vue'
+import eventBus from '@/utils/eventBus'
 import { useEmitt } from '@/hooks/web/useEmitt'
 import { useI18n } from '@/hooks/web/useI18n'
+import colorFunctions from 'less/lib/less/functions/color.js'
+import colorTree from 'less/lib/less/tree/color.js'
+import { colorStringToHex } from '@/utils/color'
 
 interface SelectConfig {
   selectValue: any
   defaultMapValue: any
   mapValue: any
+  displayFormat?: number
   defaultValue: any
   checkedFieldsMap: object
   displayType: string
@@ -32,6 +41,7 @@ interface SelectConfig {
   placeholder: string
   resultMode: number
   displayId: string
+  defaultValueFirstItem: boolean
   sort: string
   sortId: string
   checkedFields: string[]
@@ -51,13 +61,14 @@ interface SelectConfig {
 }
 
 const { t } = useI18n()
-
+const dvMainStore = dvMainStoreWithOut()
 const props = defineProps({
   config: {
     type: Object as PropType<SelectConfig>,
     default: () => {
       return {
         selectValue: '',
+        displayFormat: 0,
         queryConditionWidth: 0,
         resultMode: 0,
         defaultValue: '',
@@ -88,6 +99,7 @@ const isConfirmSearch = inject('is-confirm-search', Function, true)
 const queryConditionWidth = inject('com-width', Function, true)
 const cascadeList = inject('cascade-list', Function, true)
 const setCascadeDefault = inject('set-cascade-default', Function, true)
+const customStyle: any = inject('$custom-style-filter')
 
 const placeholderText = computed(() => {
   if (placeholder?.value?.placeholderShow) {
@@ -95,10 +107,22 @@ const placeholderText = computed(() => {
   }
   return ' '
 })
+
+const isMobileDataV = computed(() => {
+  const { inMobile, dvInfo } = dvMainStore
+  return dvInfo.type === 'dataV' && inMobile
+})
+
+const VanPopupSelect = defineAsyncComponent(() => import('./VanPopupSelect.vue'))
+
 const cascade = computed(() => {
   return cascadeList() || []
 })
-
+let time
+const disabledFirstItem = computed(() => {
+  const { defaultValueFirstItem, optionValueSource } = props.config
+  return defaultValueFirstItem && optionValueSource === 1
+})
 const setDefaultMapValue = arr => {
   const { displayId, field } = config.value
   if (config.value.optionValueSource !== 1) {
@@ -121,6 +145,7 @@ const setDefaultMapValue = arr => {
 }
 
 onUnmounted(() => {
+  clearTimeout(time)
   enumValueArr = []
 })
 
@@ -235,6 +260,7 @@ const displayTypeChange = () => {
   if (!props.isConfig) return
   config.value.defaultValue = config.value.multiple ? [] : undefined
   selectValue.value = config.value.multiple ? [] : undefined
+  config.value.defaultValueFirstItem = false
 }
 
 const handleFieldIdDefaultChange = (val: string[]) => {
@@ -335,9 +361,22 @@ const handleFieldIdChange = (val: EnumValue) => {
         }
       })
       customSort()
+      if (!res?.length) {
+        options.value = []
+        selectValue.value = config.value.multiple ? [] : undefined
+        config.value.defaultValue = selectValue.value
+      }
     })
     .finally(() => {
       loading.value = false
+      if (disabledFirstItem.value && config.value.defaultValueCheck) {
+        time = setTimeout(() => {
+          clearTimeout(time)
+          setDefaultValueFirstItem()
+        }, 300)
+        return
+      }
+
       if (config.value.defaultValueCheck && !isFromRemote.value) {
         selectValue.value = Array.isArray(config.value.defaultValue)
           ? [...config.value.defaultValue]
@@ -357,6 +396,7 @@ const handleFieldIdChange = (val: EnumValue) => {
         config.value.mapValue = setDefaultMapValue(
           Array.isArray(selectValue.value) ? [...selectValue.value] : [selectValue.value]
         )
+
         if (shouldReSearch) {
           queryDataForId(config.value.id)
         }
@@ -365,7 +405,6 @@ const handleFieldIdChange = (val: EnumValue) => {
           ? [...selectValue.value]
           : selectValue.value
       }
-
       isFromRemote.value = false
     })
 }
@@ -376,6 +415,45 @@ watch(
   () => config.value.showEmpty,
   () => {
     setEmptyData()
+  }
+)
+
+const setDefaultValueFirstItem = () => {
+  if (!options.value.length) return
+  selectValue.value = config.value.multiple ? [options.value[0].value] : options.value[0].value
+  const value = Array.isArray(selectValue.value) ? [...selectValue.value] : selectValue.value
+  if (!props.isConfig) {
+    config.value.selectValue = Array.isArray(selectValue.value)
+      ? [...selectValue.value]
+      : selectValue.value
+    config.value.mapValue = setDefaultMapValue(
+      Array.isArray(selectValue.value) ? [...selectValue.value] : [selectValue.value]
+    )
+    setCascadeValueBack(config.value.mapValue)
+    emitCascade()
+    nextTick(() => {
+      isConfirmSearch(config.value.id, true)
+    })
+    return
+  }
+
+  setCascadeDefault(emitCascadeConfig())
+
+  config.value.defaultValue = value
+  config.value.mapValue = setDefaultMapValue(
+    Array.isArray(selectValue.value) ? [...selectValue.value] : [selectValue.value]
+  )
+  config.value.defaultMapValue = setDefaultMapValue(
+    Array.isArray(selectValue.value) ? [...selectValue.value] : [selectValue.value]
+  )
+  setCascadeValueBack(config.value.mapValue)
+}
+
+watch(
+  () => config.value.defaultValueFirstItem,
+  val => {
+    if (!val) return
+    setDefaultValueFirstItem()
   }
 )
 
@@ -437,12 +515,15 @@ watch(
     if (!props.isConfig) return
     if (val) {
       selectValue.value = []
+      setDefaultValueFirstItem()
     }
     nextTick(() => {
       multiple.value = val
       if (!val) {
         nextTick(() => {
           selectValue.value = undefined
+          if (!config.value.defaultValueFirstItem || !config.value.defaultValueCheck) return
+          setDefaultValueFirstItem()
         })
       }
     })
@@ -477,6 +558,7 @@ watch(
       config.value.defaultValue = cloneDeep(selectValue.value)
     }
     debounceOptions(valNew)
+    config.value.defaultValueFirstItem = false
   }
 )
 
@@ -543,7 +625,10 @@ const setOptions = (num: number) => {
         (valueSource || []).map(ele => {
           return {
             label: `${ele}`,
-            value: `${ele}`
+            value: `${ele}`,
+            checked: Array.isArray(selectValue.value)
+              ? selectValue.value.includes(`${ele}`)
+              : selectValue.value === ele
           }
         })
       )
@@ -583,6 +668,10 @@ const getCustomWidth = () => {
 
 const selectStyle = computed(() => {
   return props.isConfig ? {} : { width: getCustomWidth() + 'px' }
+})
+
+const selectStyleFlat = computed(() => {
+  return props.isConfig ? { width: '415px' } : { width: getCustomWidth() + 'px' }
 })
 
 const mult = ref()
@@ -638,6 +727,70 @@ onMounted(() => {
     Boolean(document.querySelector('.datav-preview'))
 })
 
+const tagColor = computed(() => {
+  if (
+    !customStyle ||
+    ['#FFFFFF', 'rgba(255, 255, 255, 1)', 'rgb(255, 255, 255)'].includes(customStyle.background)
+  )
+    return ''
+  if (customStyle.background === '#131C42') return 'rgb(38, 53, 82)'
+  const hexColor = customStyle.background.startsWith('#')
+    ? customStyle.background
+    : colorStringToHex(customStyle.background)
+
+  return colorFunctions
+    .mix(new colorTree('ffffff'), new colorTree(hexColor.substr(1)), { value: 20 })
+    .toRGB()
+})
+
+const tagWidth = computed(() => {
+  return (getCustomWidth() - 65) / 2 + 'px'
+})
+
+const tagTextWidth = computed(() => {
+  return (getCustomWidth() - 65) / 2 - 20 + 'px'
+})
+
+const activeItems = computed(() => {
+  return Array.isArray(selectValue.value) ? selectValue.value : [selectValue.value]
+})
+
+const handleItemClick = (item: any) => {
+  if (multiple.value) {
+    if (selectValue.value.includes(item)) {
+      selectValue.value = selectValue.value.filter(ele => ele !== item)
+    } else {
+      selectValue.value = [...selectValue.value, item]
+    }
+  } else {
+    selectValue.value = selectValue.value === item ? undefined : item
+  }
+
+  handleValueChange()
+}
+
+const componentClick = () => {
+  mult.value?.blur()
+  single.value?.blur()
+}
+
+onMounted(() => {
+  eventBus.on('componentClick', componentClick)
+})
+onBeforeUnmount(() => {
+  eventBus.off('componentClick', componentClick)
+})
+
+const onClear = () => {
+  selectValue.value = multiple.value ? [] : undefined
+  handleValueChange()
+}
+
+const onConfirm = (val: any) => {
+  selectValue.value = multiple.value ? [...val] : val[0]
+  handleValueChange()
+}
+
 defineExpose({
   displayTypeChange,
   mult,
@@ -646,8 +799,18 @@ defineExpose({
 </script>
 
 <template>
+  <Flat
+    @handleItemClick="handleItemClick"
+    :options="options"
+    :selectStyle="selectStyleFlat"
+    v-loading="loading"
+    :multiple="multiple"
+    :disabled="disabledFirstItem && props.isConfig"
+    :activeItems="activeItems"
+    v-if="config.displayFormat === 1"
+  ></Flat>
   <el-select-v2
-    v-if="multiple"
+    v-else-if="multiple"
     key="multiple"
     ref="mult"
     v-model="selectValue"
@@ -659,7 +822,9 @@ defineExpose({
     :popper-class="popperClass"
     multiple
     show-checked
+    :tagColor="tagColor"
     scrollbar-always-on
+    :disabled="disabledFirstItem && props.isConfig"
     clearable
     :style="selectStyle"
     collapse-tags
@@ -676,6 +841,7 @@ defineExpose({
     v-loading="loading"
     @change="handleValueChange"
     clearable
+    :disabled="disabledFirstItem && props.isConfig"
     ref="single"
     :style="selectStyle"
     filterable
@@ -689,6 +855,14 @@ defineExpose({
       </el-radio-group>
     </template>
   </el-select-v2>
+  <VanPopupSelect
+    @onClear="onClear"
+    @onConfirm="onConfirm"
+    :options="options"
+    :selectValue="selectValue"
+    :multiple="multiple"
+    v-if="isMobileDataV"
+  ></VanPopupSelect>
 </template>
 
 <style lang="less">
@@ -727,6 +901,18 @@ defineExpose({
   .ed-scrollbar__thumb {
     background: #bbbfc4 !important;
     opacity: 1 !important;
+  }
+}
+</style>
+
+<style lang="less" scoped>
+:deep(.ed-select__selected-item) {
+  .ed-tag {
+    max-width: v-bind(tagWidth) !important;
+  }
+
+  .ed-select__tags-text {
+    max-width: v-bind(tagTextWidth) !important;
   }
 }
 </style>

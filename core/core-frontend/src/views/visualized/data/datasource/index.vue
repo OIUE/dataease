@@ -5,7 +5,7 @@ import icon_copy_filled from '@/assets/svg/icon_copy_filled.svg'
 import icon_dataset from '@/assets/svg/icon_dataset.svg'
 import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
 import icon_intoItem_outlined from '@/assets/svg/icon_into-item_outlined.svg'
-import { debounce } from 'lodash-es'
+import { throttle } from 'lodash-es'
 import icon_rename_outlined from '@/assets/svg/icon_rename_outlined.svg'
 import icon_warning_colorful_red from '@/assets/svg/icon_warning_colorful_red.svg'
 import dvFolder from '@/assets/svg/dv-folder.svg'
@@ -56,7 +56,7 @@ import CreatDsGroup from './form/CreatDsGroup.vue'
 import type { Tree } from '../dataset/form/CreatDsGroup.vue'
 import { previewData, getById } from '@/api/datasource'
 import { useI18n } from '@/hooks/web/useI18n'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router_2'
 import DatasetDetail from '@/views/visualized/data/dataset/DatasetDetail.vue'
 import { timestampFormatDate } from '@/views/visualized/data/dataset/form/util'
 import EmptyBackground from '@/components/empty-background/src/EmptyBackground.vue'
@@ -205,7 +205,7 @@ const selectDataset = row => {
   Object.assign(dsTableDetail, row)
   userDrawer.value = true
   dsTableDataLoading.value = true
-  getTableField({ tableName: row.tableName, datasourceId: nodeInfo.id })
+  getTableField({ tableName: row.tableName, datasourceId: nodeInfo.id, isCross: false })
     .then(res => {
       state.dsTableData = res.data
     })
@@ -797,8 +797,12 @@ const handleCopy = async data => {
       fileName,
       size,
       description,
-      lastSyncTime
+      lastSyncTime,
+      enableDataFill
     } = res.data
+    let arr = pluginDs.value.filter(ele => {
+      return ele.type == res.data.type
+    })
     if (configuration) {
       configuration = JSON.parse(symmetricDecrypt(configuration, symmetricKey.value))
     }
@@ -824,7 +828,10 @@ const handleCopy = async data => {
       syncSetting,
       apiConfiguration: apiConfigurationStr,
       paramsConfiguration: paramsStr,
-      lastSyncTime
+      lastSyncTime,
+      enableDataFill,
+      isPlugin: arr && arr.length > 0,
+      staticMap: arr[0]?.staticMap
     })
     datasource.id = ''
     datasource.copy = true
@@ -1035,7 +1042,7 @@ const loadInit = () => {
   }
 }
 
-const proxyAllowDrop = debounce((arg1, arg2) => {
+const proxyAllowDrop = throttle((arg1, arg2) => {
   const flagArray = ['dashboard', 'dataV', 'dataset', 'datasource']
   const flag = flagArray.findIndex(item => item === 'datasource')
   if (flag < 0 || !isFreeFolder(arg2, flag + 1)) {
@@ -1051,7 +1058,7 @@ onMounted(() => {
   loadInit()
   listDs()
   setSupportSetKey()
-  const { opt } = router.currentRoute.value.query
+  const { opt } = router?.currentRoute?.value?.query || {}
   if (opt && opt === 'create') {
     datasourceEditor.value.init(null, null, null, isSupportSetKey.value)
   }
@@ -1818,24 +1825,26 @@ const getMenuList = (val: boolean) => {
       width="840px"
       top="60px"
     >
-      <el-row :gutter="24">
-        <el-col :span="12">
-          <p class="table-name">
-            {{ t('datasource.table_name') }}
-          </p>
-          <p class="table-value">
-            {{ dsTableDetail.tableName }}
-          </p>
-        </el-col>
-        <el-col :span="12">
-          <p class="table-name">
-            {{ t('datasource.table_description') }}
-          </p>
-          <p class="table-value">
-            {{ dsTableDetail.name || '-' }}
-          </p>
-        </el-col>
-      </el-row>
+      <div style="overflow: hidden">
+        <el-row :gutter="24">
+          <el-col :span="12">
+            <p class="table-name">
+              {{ t('datasource.table_name') }}
+            </p>
+            <p class="table-value">
+              {{ dsTableDetail.tableName }}
+            </p>
+          </el-col>
+          <el-col :span="12">
+            <p class="table-name">
+              {{ t('datasource.table_description') }}
+            </p>
+            <p class="table-value">
+              {{ dsTableDetail.name || '-' }}
+            </p>
+          </el-col>
+        </el-row>
+      </div>
       <el-scrollbar>
         <el-table
           v-loading="dsTableDataLoading"
@@ -2316,7 +2325,7 @@ const getMenuList = (val: boolean) => {
 }
 
 .custom-tree-node {
-  width: calc(100% - 30px);
+  width: calc(100% - 34px);
   display: flex;
   align-items: center;
   box-sizing: content-box;

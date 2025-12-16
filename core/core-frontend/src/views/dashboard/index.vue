@@ -34,6 +34,7 @@ import eventBus from '@/utils/eventBus'
 import { useI18n } from '@/hooks/web/useI18n'
 import DashboardHiddenComponent from '@/components/dashboard/DashboardHiddenComponent.vue'
 import { recoverToPublished } from '@/api/visualization/dataVisualization'
+import SqlAssistant from '@/views/sqlbot/assistant.vue'
 const embeddedStore = useEmbedded()
 const { wsCache } = useCache()
 const canvasCacheOutRef = ref(null)
@@ -112,7 +113,7 @@ const checkPer = async resourceId => {
   if (!window.DataEaseBi || !resourceId) {
     return true
   }
-  const request = { busiFlag: 'dashboard' }
+  const request = { busiFlag: 'dashboard', resourceTable: 'core' }
   await interactiveStore.setInteractive(request)
   return check(wsCache.get('panel-weight'), resourceId, 4)
 }
@@ -161,22 +162,27 @@ const doUseCache = flag => {
 
 const initLocalCanvasData = callBack => {
   const { resourceId, opt, sourcePid } = state
-  const busiFlg = opt === 'copy' ? 'dashboard-copy' : 'dashboard'
-  initCanvasData(resourceId, { busiFlg, resourceTable: 'snapshot' }, function () {
-    dataInitState.value = true
-    if (dvInfo.value && opt === 'copy') {
-      dvInfo.value.dataState = 'prepare'
-      dvInfo.value.optType = 'copy'
-      dvInfo.value.pid = sourcePid
-      setTimeout(() => {
-        snapshotStore.recordSnapshotCache('initLocalCanvasData')
-      }, 1500)
+  const busiFlag = opt === 'copy' ? 'dashboard-copy' : 'dashboard'
+  initCanvasData(
+    resourceId,
+    { busiFlag, resourceTable: 'snapshot', source: 'main-edit' },
+    function () {
+      dataInitState.value = true
+      if (dvInfo.value && opt === 'copy') {
+        dvInfo.value.dataState = 'prepare'
+        dvInfo.value.optType = 'copy'
+        dvInfo.value.pid = sourcePid
+        setTimeout(() => {
+          snapshotStore.recordSnapshotCache('initLocalCanvasData')
+        }, 1500)
+      }
+      onInitReady({ resourceId: resourceId })
+      callBack && callBack()
     }
-    onInitReady({ resourceId: resourceId })
-    callBack && callBack()
-  })
+  )
 }
 onMounted(async () => {
+  document.body.style.overflow = 'hidden'
   dvMainStore.setCurComponent({ component: null, index: null })
   dvMainStore.setHiddenListStatus(false)
   snapshotStore.initSnapShot()
@@ -199,7 +205,8 @@ onMounted(async () => {
   const createType = embeddedStore.createType || router.currentRoute.value.query.createType
   const templateParams =
     embeddedStore.templateParams || router.currentRoute.value.query.templateParams
-  const checkResult = await checkPer(resourceId)
+  const checkResourceId = opt && opt === 'copy' ? null : resourceId
+  const checkResult = await checkPer(checkResourceId as string)
   if (!checkResult) {
     return
   }
@@ -299,10 +306,14 @@ const cancelHidden = item => {
 const doRecoverToPublished = () => {
   recoverToPublished({ id: dvInfo.value.id, type: 'dashboard', name: dvInfo.value.name }).then(
     () => {
+      state.resourceId = dvInfo.value.id
+      state.sourcePid = dvInfo.value.pid
+      state.opt = null
       initLocalCanvasData(() => {
         nextTick(() => {
           deCanvasRef.value.canvasInit(false)
           dvMainStore.updateDvInfoCall(1)
+          useEmitt().emitter.emit('calcData-all')
         })
       })
     }
@@ -310,6 +321,7 @@ const doRecoverToPublished = () => {
 }
 
 onUnmounted(() => {
+  document.body.style.overflow = ''
   window.removeEventListener('storage', eventCheck)
   window.removeEventListener('message', winMsgHandle)
 })
@@ -328,6 +340,7 @@ onUnmounted(() => {
       :class="{ 'preview-content': editMode === 'preview' }"
       element-loading-background="rgba(0, 0, 0, 0)"
     >
+      <!--      <SqlAssistant></SqlAssistant>-->
       <!-- 中间画布 -->
       <main class="center" :class="{ 'de-screen-full': fullscreenFlag }">
         <de-canvas

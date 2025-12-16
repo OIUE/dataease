@@ -12,6 +12,7 @@ import { CustomPassword } from '@/components/custom-password'
 import { Base64 } from 'js-base64'
 import { querySymmetricKey } from '@/api/login'
 import { symmetricDecrypt } from '@/utils/encryption'
+import { XpackComponent } from '@/components/plugin'
 const { t } = useI18n()
 const dialogVisible = ref(false)
 const loadingInstance = ref(null)
@@ -148,9 +149,9 @@ const defaultInfo = {
     username: '',
     password: '',
     extraParams: '',
-    initialPoolSize: 5,
-    minPoolSize: 5,
-    maxPoolSize: 5,
+    initialPoolSize: 50,
+    minPoolSize: 50,
+    maxPoolSize: 100,
     queryTimeout: 30
   },
   syncSetting: null,
@@ -175,7 +176,8 @@ const edit = () => {
           fileName,
           size,
           description,
-          lastSyncTime
+          lastSyncTime,
+          enableDataFill
         } = res.data
         if (configuration) {
           configuration = JSON.parse(symmetricDecrypt(configuration, response.data))
@@ -193,7 +195,8 @@ const edit = () => {
           type,
           configuration,
           syncSetting,
-          lastSyncTime
+          lastSyncTime,
+          enableDataFill
         })
       })
       .finally(() => {
@@ -268,7 +271,7 @@ defineExpose({
   <el-drawer
     :title="t('system.engine_settings')"
     v-model="dialogVisible"
-    custom-class="basic-param-drawer"
+    modal-class="basic-param-drawer"
     size="600px"
     direction="rtl"
   >
@@ -436,6 +439,11 @@ defineExpose({
           </el-col>
         </el-row>
       </template>
+      <!--    数据填报      -->
+      <XpackComponent
+        :form="nodeInfo"
+        jsname="L2NvbXBvbmVudC9kYXRhLWZpbGxpbmcvRGF0YXNvdXJjZUVuYWJsZURhdGFGaWxsaW5n"
+      />
     </el-form>
     <template #footer>
       <span class="dialog-footer">

@@ -2,6 +2,7 @@
 import icon_info_outlined from '@/assets/svg/icon_info_outlined.svg'
 import icon_linkRecord_outlined from '@/assets/svg/icon_link-record_outlined.svg'
 import icon_viewinchat_outlined from '@/assets/svg/icon_viewinchat_outlined.svg'
+import { cancelRequestBatch } from '@/config/axios/service'
 import icon_drilling_outlined from '@/assets/svg/icon_drilling_outlined.svg'
 import { useI18n } from '@/hooks/web/useI18n'
 import ChartComponentG2Plot from './components/ChartComponentG2Plot.vue'
@@ -37,7 +38,7 @@ import { useFilter } from '@/hooks/web/useFilter'
 import { useCache } from '@/hooks/web/useCache'
 
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
-import { cloneDeep } from 'lodash-es'
+import { cloneDeep, debounce } from 'lodash-es'
 import ChartComponentS2 from '@/views/chart/components/views/components/ChartComponentS2.vue'
 import { ChartLibraryType } from '@/views/chart/components/js/panel/types'
 import chartViewManager from '@/views/chart/components/js/panel'
@@ -54,7 +55,7 @@ import request from '@/config/axios'
 import { store } from '@/store'
 import { clearExtremum } from '@/views/chart/components/js/extremumUitl'
 import DePreviewPopDialog from '@/components/visualization/DePreviewPopDialog.vue'
-import { useRoute } from 'vue-router'
+import { useRoute } from 'vue-router_2'
 const route = useRoute()
 const { wsCache } = useCache()
 const chartComponent = ref<any>()
@@ -63,12 +64,13 @@ const dvMainStore = dvMainStoreWithOut()
 const { emitter } = useEmitt()
 const dePreviewPopDialogRef = ref(null)
 let innerRefreshTimer = null
+let innerSearchCount = 0
 const appStore = useAppStoreWithOut()
 const appearanceStore = useAppearanceStoreWithOut()
 const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
 const isIframe = computed(() => appStore.getIsIframe)
 
-const emit = defineEmits(['onPointClick'])
+const emit = defineEmits(['onPointClick', 'onComponentEvent'])
 
 const {
   nowPanelJumpInfo,
@@ -78,11 +80,15 @@ const {
   canvasStyleData,
   mobileInPc,
   inMobile,
-  editMode,
-  hiddenListStatus
+  editMode
 } = storeToRefs(dvMainStore)
 
 const props = defineProps({
+  // 公共参数集
+  commonParams: {
+    type: Object,
+    required: false
+  },
   active: {
     type: Boolean,
     default: false
@@ -176,7 +182,7 @@ const state = reactive({
     width: 'fit-content',
     maxWidth: '100%',
     wordBreak: 'break-word',
-    whiteSpace: 'pre-wrap'
+    whiteSpace: 'pre-wrap!important'
   } as CSSProperties,
   drillFilters: [],
   viewInfoData: null,
@@ -236,6 +242,7 @@ const buildInnerRefreshTimer = (
     innerRefreshTimer = setInterval(() => {
       clearViewLinkage()
       queryData()
+      innerSearchCount++
     }, timerRefreshTime)
   }
 }
@@ -423,6 +430,9 @@ const windowsJump = (url, jumpType, size = 'middle') => {
       }
     } else {
       newWindow = window.open(url, jumpType)
+      if (inMobile.value) {
+        window.location.reload()
+      }
     }
     initOpenHandler(newWindow)
   } catch (e) {
@@ -434,8 +444,13 @@ const jumpClick = param => {
   let dimension, jumpInfo, sourceInfo
   // 如果有名称name 获取和name匹配的dimension 否则倒序取最后一个能匹配的
   if (param.name) {
-    param.dimensionList.forEach(dimensionItem => {
-      if (dimensionItem.id === param.name || dimensionItem.value === param.name) {
+    const colList = [...param.dimensionList, ...param.quotaList]
+    colList.forEach(dimensionItem => {
+      if (
+        dimensionItem.id === param.name ||
+        dimensionItem.value === param.name ||
+        dimensionItem.name === param.name
+      ) {
         dimension = dimensionItem
         sourceInfo = param.viewId + '#' + dimension.id
         jumpInfo = nowPanelJumpInfo.value[sourceInfo]
@@ -466,9 +481,13 @@ const jumpClick = param => {
     const jumpInfoParam = `&jumpInfoParam=${encodeURIComponent(
       Base64.encode(JSON.stringify(param))
     )}`
+
     // 内部仪表板跳转
     if (jumpInfo.linkType === 'inner') {
       if (jumpInfo.targetDvId) {
+        const editPreviewParams = ['canvas', 'edit-preview'].includes(showPosition.value)
+          ? '&editPreview=true'
+          : ''
         const filterOuterParams = {}
         const curFilter = dvMainStore.getLastViewRequestInfo(param.viewId)
         const targetViewInfoList = jumpInfo.targetViewInfoList
@@ -501,11 +520,11 @@ const jumpClick = param => {
         if (publicLinkStatus.value) {
           // 判断是否有公共链接ID
           if (jumpInfo.publicJumpId) {
-            let url = `${embeddedBaseUrl}#/de-link/${jumpInfo.publicJumpId}?fromLink=true&dvType=${dvInfo.value.type}`
+            let url = `${embeddedBaseUrl}#/de-link/${jumpInfo.publicJumpId}?fromLink=true&dvType=${jumpInfo.targetDvType}`
             if (attachParamsInfo) {
-              url = url + attachParamsInfo + jumpInfoParam
+              url = url + attachParamsInfo + jumpInfoParam + editPreviewParams
             } else {
-              url = url + '&ignoreParams=true' + jumpInfoParam
+              url = url + '&ignoreParams=true' + jumpInfoParam + editPreviewParams
             }
             const currentUrl = window.location.href
             localStorage.setItem('beforeJumpUrl', currentUrl)
@@ -514,11 +533,11 @@ const jumpClick = param => {
             ElMessage.warning(t('visualization.public_link_tips'))
           }
         } else {
-          let url = `${embeddedBaseUrl}#/preview?dvId=${jumpInfo.targetDvId}&fromLink=true&dvType=${dvInfo.value.type}`
+          let url = `${embeddedBaseUrl}#/preview?dvId=${jumpInfo.targetDvId}&fromLink=true&dvType=${jumpInfo.targetDvType}`
           if (attachParamsInfo) {
-            url = url + attachParamsInfo + jumpInfoParam
+            url = url + attachParamsInfo + jumpInfoParam + editPreviewParams
           } else {
-            url = url + '&ignoreParams=true' + jumpInfoParam
+            url = url + '&ignoreParams=true' + jumpInfoParam + editPreviewParams
           }
           const currentUrl = window.location.href
           localStorage.setItem('beforeJumpUrl', currentUrl)
@@ -553,7 +572,13 @@ const jumpClick = param => {
   }
 }
 
-const queryData = (firstLoad = false) => {
+const queryDataFromSelect = (firstLoad = false) => {
+  cancelRequestBatch(`chartData/getData/${view.value.id}`)
+  loading.value = false
+  queryData(firstLoad)
+}
+
+const queryData = debounce((firstLoad = false) => {
   if (loading.value) {
     return
   }
@@ -563,7 +588,7 @@ const queryData = (firstLoad = false) => {
   params['chartExtRequest'] = queryFilter
   chartExtRequest.value = queryFilter
   calcData(params)
-}
+}, 300)
 
 const calcData = params => {
   dvMainStore.setLastViewRequestInfo(params.id, params.chartExtRequest)
@@ -574,13 +599,13 @@ const calcData = params => {
         methodName: 'calcData',
         args: [
           params,
-          res => {
+          () => {
             loading.value = false
           }
         ]
       })
     } else {
-      chartComponent?.value?.calcData?.(params, res => {
+      chartComponent?.value?.calcData?.(params, () => {
         loading.value = false
       })
     }
@@ -601,7 +626,7 @@ onBeforeMount(() => {
     nextTick(() => {
       useEmitt({
         name: `query-data-${view.value.id}`,
-        callback: queryData
+        callback: queryDataFromSelect
       })
     })
   }
@@ -698,10 +723,37 @@ const changeChartType = () => {
 const changeDataset = () => {
   checkFieldIsAllowEmpty()
 }
+
+const loadPlugin = ref(false)
+
+// 渲染图表回调
+const renderChartCallback = val => {
+  if (!state.initReady) {
+    return
+  }
+  initTitle()
+  const viewInfo = val ? val : view.value
+  nextTick(() => {
+    if (view.value?.plugin?.isPlugin) {
+      chartComponent?.value?.invokeMethod({
+        methodName: 'renderChart',
+        args: [viewInfo]
+      })
+      return
+    }
+    chartComponent?.value?.renderChart?.(viewInfo)
+  })
+}
 onMounted(() => {
   if (!view.value.isPlugin) {
     state.drillClickDimensionList = view.value?.chartExtRequest?.drill ?? []
     queryData(!showPosition.value.includes('viewDialog'))
+  } else {
+    const searched = dvMainStore.firstLoadMap.includes(element.value.id)
+    const queryFilter = filter(!searched)
+    view.value['chartExtRequest'] = queryFilter
+    chartExtRequest.value = queryFilter
+    loadPlugin.value = true
   }
   if (!listenerEnable.value) {
     return
@@ -776,21 +828,7 @@ onMounted(() => {
   useEmitt({
     name: 'renderChart-' + view.value.id,
     callback: function (val) {
-      if (!state.initReady) {
-        return
-      }
-      initTitle()
-      const viewInfo = val ? val : view.value
-      nextTick(() => {
-        if (view.value?.plugin?.isPlugin) {
-          chartComponent?.value?.invokeMethod({
-            methodName: 'renderChart',
-            args: [viewInfo]
-          })
-          return
-        }
-        chartComponent?.value?.renderChart?.(viewInfo)
-      })
+      renderChartCallback(val)
     }
   })
   useEmitt({
@@ -827,6 +865,14 @@ onMounted(() => {
       clearExtremum(chart)
     }
   })
+  if (showPosition.value === 'viewDialog') {
+    useEmitt({
+      name: 'renderChart-viewDialog-' + view.value.id,
+      callback: function (val) {
+        renderChartCallback(val)
+      }
+    })
+  }
 
   const { refreshViewEnable, refreshUnit, refreshTime } = view.value
   buildInnerRefreshTimer(refreshViewEnable, refreshUnit, refreshTime)
@@ -836,7 +882,11 @@ onMounted(() => {
 
 // 1.开启仪表板刷新 2.首次加载（searchCount =0 ）3.正在请求数据 则显示加载状态
 const loadingFlag = computed(() => {
-  return (canvasStyleData.value.refreshViewLoading || searchCount.value === 0) && loading.value
+  return (
+    (canvasStyleData.value.refreshViewLoading ||
+      (searchCount.value === 0 && innerSearchCount === 0)) &&
+    loading.value
+  )
 })
 
 const chartAreaShow = computed(() => {
@@ -910,7 +960,7 @@ function onTitleChange() {
 }
 
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 
 const marginBottom = computed<string | 0>(() => {
@@ -1064,7 +1114,7 @@ const clearG2Tooltip = () => {
       :style="{ 'justify-content': titleAlign, 'margin-bottom': marginBottom }"
     >
       <template v-if="!titleEditStatus">
-        <p v-if="titleShow" :style="state.title_class" @dblclick="changeEditTitle">
+        <p class="ellipsis" v-if="titleShow" :style="state.title_class" @dblclick="changeEditTitle">
           {{ view.title }}
         </p>
       </template>
@@ -1138,7 +1188,7 @@ const clearG2Tooltip = () => {
     <!--这里去渲染不同图库的图表-->
     <div v-if="allEmptyCheck || (chartAreaShow && !showEmpty)" style="flex: 1; overflow: hidden">
       <plugin-component
-        v-if="view.plugin?.isPlugin"
+        v-if="view.plugin?.isPlugin && loadPlugin"
         :jsname="view.plugin.staticMap['index']"
         :scale="scale"
         :dynamic-area-id="dynamicAreaId"
@@ -1149,6 +1199,9 @@ const clearG2Tooltip = () => {
         :emitter="emitter"
         :store="store"
         :suffixId="suffixId"
+        :active="active"
+        :disabled="!['canvas', 'canvasDataV'].includes(showPosition) || disabled"
+        :edit-mode="editMode"
         ref="chartComponent"
         @onChartClick="chartClick"
         @onPointClick="onPointClick"
@@ -1189,11 +1242,13 @@ const clearG2Tooltip = () => {
         :show-position="showPosition"
         :suffixId="suffixId"
         :font-family="fontFamily"
+        :common-params="commonParams"
         @touchstart="clearG2Tooltip"
         @onChartClick="chartClick"
         @onPointClick="onPointClick"
         @onDrillFilters="onDrillFilters"
         @onJumpClick="jumpClick"
+        @onComponentEvent="() => emit('onComponentEvent')"
       />
       <chart-component-g2-plot
         :scale="scale"
@@ -1303,5 +1358,12 @@ const clearG2Tooltip = () => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.ellipsis {
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
 }
 </style>

@@ -1,4 +1,5 @@
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
+import type { ManipulateType } from 'dayjs'
 import { storeToRefs } from 'pinia'
 import dayjs from 'dayjs'
 import { getDynamicRange, getCustomTime } from '@/custom-component/v-query/time-format'
@@ -9,23 +10,37 @@ const { componentData, canvasStyleData } = storeToRefs(dvMainStore)
 const getDynamicRangeTime = (type: number, selectValue: any, timeGranularityMultiple: string) => {
   const timeType = (timeGranularityMultiple || '').split('range')[0]
 
-  if (timeGranularityMultiple === 'datetimerange' || type === 1 || !timeType) {
+  if ('datetimerange' === timeGranularityMultiple || type === 1 || !timeType) {
     return selectValue.map(ele => +new Date(ele))
   }
 
-  const [start, end] = selectValue
+  if (timeGranularityMultiple.includes('range') && type === 7) {
+    return [
+      +new Date(
+        dayjs(selectValue[0])
+          .startOf(timeType as 'month' | 'year' | 'date')
+          .format('YYYY-MM-DD HH:mm:ss')
+      ),
+      +new Date(
+        dayjs(selectValue[1])
+          .endOf(timeType as 'month' | 'year' | 'date')
+          .format('YYYY-MM-DD HH:mm:ss')
+      )
+    ]
+  }
+
+  const [start] = selectValue
 
   return [
     +new Date(start),
     +getCustomTime(
       1,
-      timeType,
+      timeType as ManipulateType,
       timeType,
       'b',
       null,
       timeGranularityMultiple,
-      'start-config',
-      new Date(end)
+      'start-config'
     ) - 1000
   ]
 }
@@ -134,10 +149,10 @@ const getValueByDefaultValueCheckOrFirstLoad = (
     return (selectValue?.length ? mapValue : selectValue) || ''
   }
 
-  if (firstLoad && !selectValue?.length) {
+  if (firstLoad) {
     return defaultValueCheck ? defaultValue : multiple ? [] : ''
   }
-  return selectValue ? selectValue : ''
+  return selectValue ? selectValue : multiple ? [] : ''
 }
 
 export const useFilter = (curComponentId: string, firstLoad = false) => {
@@ -160,6 +175,19 @@ export const useFilter = (curComponentId: string, firstLoad = false) => {
       searchQuery(list, filter, curComponentId, firstLoad)
 
       list.forEach(element => {
+        if (element.innerType === 'DeTabs') {
+          element.propValue.forEach(itx => {
+            const elementArr = itx.componentData.filter(
+              item =>
+                item.innerType === 'VQuery' &&
+                (popupAvailable || (!popupAvailable && ele.category !== 'hidden'))
+            )
+            searchQuery(elementArr, filter, curComponentId, firstLoad)
+          })
+        }
+      })
+
+      ele.propValue.forEach(element => {
         if (element.innerType === 'DeTabs') {
           element.propValue.forEach(itx => {
             const elementArr = itx.componentData.filter(

@@ -1,7 +1,7 @@
 import router from './router'
 import { useUserStoreWithOut } from '@/store/modules/user'
 import { useAppStoreWithOut } from '@/store/modules/app'
-import type { RouteRecordRaw } from 'vue-router'
+import type { RouteRecordRaw } from 'vue-router_2'
 import { getDefaultSettings } from '@/api/common'
 import { useNProgress } from '@/hooks/web/useNProgress'
 import { usePermissionStoreWithOut, pathValid, getFirstAuthMenu } from '@/store/modules/permission'
@@ -53,7 +53,11 @@ router.beforeEach(async (to, from, next) => {
       pathname = pathname.replace('oidc/', '')
       pathname = pathname.substring(0, pathname.length - 1)
       const prefix = window.origin + pathname
-      window.location.href = prefix + '/mobile.html#' + to.path + linkQuery
+      let toPath = to.fullPath
+      if (toPath.includes('?')) {
+        toPath = to.fullPath.substring(0, to.fullPath.lastIndexOf('?'))
+      }
+      window.location.href = prefix + '/mobile.html#' + toPath + linkQuery
     } else if (
       wsCache.get('user.token') ||
       isDesktop ||
@@ -62,6 +66,9 @@ router.beforeEach(async (to, from, next) => {
       let pathname = window.location.pathname
       pathname = pathname.substring(0, pathname.length - 1)
       let url = window.origin + pathname + '/mobile.html#/index'
+      if (location.hash?.startsWith('#/preview')) {
+        url = window.origin + pathname + '/mobile.html' + location.hash
+      }
       if (window.location.search) {
         url += window.location.search
       }

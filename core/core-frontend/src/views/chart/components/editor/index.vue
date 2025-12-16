@@ -47,7 +47,7 @@ import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
 import { BASE_VIEW_CONFIG, getViewConfig } from '@/views/chart/components/editor/util/chart'
 import ChartType from '@/views/chart/components/editor/chart-type/ChartType.vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router_2'
 import CompareEdit from '@/views/chart/components/editor/drag-item/components/CompareEdit.vue'
 import ValueFormatterEdit from '@/views/chart/components/editor/drag-item/components/ValueFormatterEdit.vue'
 import CustomSortEdit from '@/views/chart/components/editor/drag-item/components/CustomSortEdit.vue'
@@ -55,13 +55,12 @@ import SortPriorityEdit from '@/views/chart/components/editor/drag-item/componen
 import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapshot'
 import CalcFieldEdit from '@/views/visualized/data/dataset/form/CalcFieldEdit.vue'
 import { getFieldName, guid } from '@/views/visualized/data/dataset/form/util'
-import { cloneDeep, forEach, get } from 'lodash-es'
+import { cloneDeep, forEach, get, debounce, set, concat, keys } from 'lodash-es'
 import { deleteField, saveField } from '@/api/dataset'
 import { getWorldTree, listCustomGeoArea } from '@/api/map'
 import chartViewManager from '@/views/chart/components/js/panel'
 import DatasetSelect from '@/views/chart/components/editor/dataset-select/DatasetSelect.vue'
 import { useDraggable } from '@vueuse/core'
-import { set, concat, keys } from 'lodash-es'
 import { PluginComponent } from '@/components/plugin'
 import { Field, getFieldByDQ, copyChartField, deleteChartField } from '@/api/chart'
 import ChartTemplateInfo from '@/views/chart/components/editor/common/ChartTemplateInfo.vue'
@@ -103,6 +102,10 @@ const renameForm = ref<FormInstance>()
 const { emitter } = useEmitt({
   name: 'set-table-column-width',
   callback: args => onTableColumnWidthChange(args)
+})
+useEmitt({
+  name: 'set-page-size',
+  callback: args => onTablePageSizeChange(args)
 })
 const props = defineProps({
   view: {
@@ -171,11 +174,15 @@ const editComponentName = () => {
   })
 }
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes || 'dark'
 })
 
 const templateStatusShow = computed(() => {
-  return view.value['dataFrom'] === 'template' && !mobileInPc.value
+  return (
+    view.value['dataFrom'] === 'template' &&
+    view.value.type !== 'picture-group' &&
+    !mobileInPc.value
+  )
 })
 
 const { view } = toRefs(props)
@@ -208,7 +215,7 @@ const isDataEaseBi = computed(() => appStore.getIsDataEaseBi || appStore.getIsIf
 const itemFormRules = reactive<FormRules>({
   chartShowName: [
     { required: true, message: t('commons.input_content'), trigger: 'change' },
-    { max: 50, message: t('commons.char_can_not_more_50'), trigger: 'change' }
+    { max: 200, message: t('commons.char_count_limit', { count: 200 }), trigger: 'change' }
   ]
 })
 
@@ -505,6 +512,17 @@ const quotaItemRemove = item => {
 
 const isFilterActive = computed(() => {
   return !!view.value.customFilter?.items?.length
+})
+const isFilterInvalid = computed(() => {
+  if (!view.value.customFilter?.items?.length) {
+    return false
+  }
+  if (!view.value.tableId) {
+    return false
+  }
+  const item = view.value.customFilter.items[0]
+  const valid = allFields.value.some(f => f.id === item.fieldId)
+  return !valid
 })
 
 const drillItemChange = () => {
@@ -1035,12 +1053,13 @@ const onTypeChange = (render, type) => {
 }
 
 const onBasicStyleChange = (chartForm: ChartEditorForm<ChartBasicStyle>, prop: string) => {
-  const { data, requestData } = chartForm
+  const { data, requestData, render } = chartForm
   const val = get(data, prop)
   set(view.value.customAttr.basicStyle, prop, val)
   if (requestData) {
     calcData(view.value)
-  } else {
+  }
+  if (render !== false) {
     renderChart(view.value)
   }
 }
@@ -1073,7 +1092,7 @@ const onMiscChange = val => {
 }
 
 const onLabelChange = (chartForm: ChartEditorForm<ChartLabelAttr>, prop: string) => {
-  const { data, requestData, render } = chartForm
+  const { data, render } = chartForm
   let labelObj = data
   if (!data) {
     labelObj = chartForm as unknown as ChartLabelAttr
@@ -1256,6 +1275,14 @@ const onTableColumnWidthChange = val => {
     return
   }
   view.value.customAttr.basicStyle.tableFieldWidth = val
+  snapshotStore.recordSnapshotCache('renderChart', view.value.id)
+}
+
+const onTablePageSizeChange = val => {
+  if (editMode.value !== 'edit') {
+    return
+  }
+  view.value.customAttr.basicStyle.tablePageSize = val
   snapshotStore.recordSnapshotCache('renderChart', view.value.id)
 }
 
@@ -1726,14 +1753,14 @@ const { y, isDragging } = useDraggable(el, {
   draggingElement: elDrag
 })
 const previewHeight = ref(0)
-const calcEle = () => {
+const calcEle = debounce(() => {
   nextTick(() => {
     previewHeight.value = (elDrag.value as HTMLDivElement).offsetHeight
     y.value = previewHeight.value / 2 + 200
   })
-}
+}, 500)
 
-const setCacheId = () => {
+const setCacheId = debounce(() => {
   nextTick(() => {
     // 富文本不使用cacheId
     if (
@@ -1745,7 +1772,7 @@ const setCacheId = () => {
       return
     view.value.tableId = cacheId as unknown as number
   })
-}
+}, 500)
 watch(
   () => curComponent.value,
   val => {
@@ -1847,7 +1874,7 @@ const setActiveShift = (ele, type = 'dimension') => {
 
 const isDrag = ref(false)
 
-const dragStartD = (e: DragEvent) => {
+const dragStartD = () => {
   isDrag.value = true
   setTimeout(() => {
     isDraggingItem.value = true
@@ -1864,7 +1891,7 @@ const singleDragStartD = (e: DragEvent, ele, type) => {
   startToMove(e, unref(activeDimension.value))
 }
 
-const dragStart = (e: DragEvent) => {
+const dragStart = () => {
   isDrag.value = true
   setTimeout(() => {
     isDraggingItem.value = true
@@ -1914,8 +1941,18 @@ const drop = (ev: MouseEvent, type = 'xAxis') => {
     const obj = cloneDeep(arr[i])
     state.moveId = obj.id as unknown as number
     view.value[type] ??= []
-    view.value[type].push(obj)
-    const e = { newDraggableIndex: view.value[type].length - 1 }
+    const targetId = ev.srcElement.offsetParent?.querySelector('.node-id_private')?.dataset?.id
+    const index = view.value[type].findIndex(ele => ele.id === targetId && ele.id !== obj.id)
+    let newDraggableIndex
+    if (index !== -1) {
+      view.value[type].splice(index + 1 + i, 0, obj)
+      newDraggableIndex = index + 1 + i
+    } else {
+      view.value[type].push(obj)
+      newDraggableIndex = view.value[type].length - 1
+    }
+
+    const e = { newDraggableIndex }
 
     if ('drillFields' === type) {
       addDrill(e)
@@ -3141,7 +3178,11 @@ const deleteChartFieldItem = id => {
                           <div
                             class="tree-btn"
                             v-if="isFilterActive || themes === 'dark'"
-                            :class="{ 'tree-btn--dark': themes === 'dark', active: isFilterActive }"
+                            :class="{
+                              'tree-btn--dark': themes === 'dark',
+                              active: isFilterActive,
+                              invalid: isFilterInvalid
+                            }"
                             @click="openTreeFilter"
                           >
                             <el-icon style="margin-right: 2px; font-size: 12px">
@@ -3514,7 +3555,9 @@ const deleteChartFieldItem = id => {
                     height: fieldDHeight + 'px'
                   }"
                 >
-                  <label>{{ t('chart.dimension') }}</label>
+                  <div style="margin-top: 12px" class="label-top">
+                    {{ t('chart.dimension') }}
+                  </div>
                   <el-scrollbar class="drag-list">
                     <div
                       v-for="element in dimensionData"
@@ -3684,7 +3727,7 @@ const deleteChartFieldItem = id => {
                   :class="{ dark: themes === 'dark' }"
                 >
                   <div class="divider"></div>
-                  <label>{{ t('chart.quota') }}</label>
+                  <div style="margin-top: 8px" class="label-top">{{ t('chart.quota') }}</div>
                   <el-scrollbar class="drag-list">
                     <div
                       v-for="element in quotaData"
@@ -4000,10 +4043,10 @@ const deleteChartFieldItem = id => {
       destroy-on-close
     >
       <template #header>
-        <span style="font-size: 15px; font-weight: bold; color: black">
+        <span style="font-size: 15px; font-weight: bold; color: #1f2329">
           {{ t('chart.sort_priority') }}
         </span>
-        <span>({{ t('chart.sort_priority_tip') }})</span>
+        <span style="color: #1f2329">({{ t('chart.sort_priority_tip') }})</span>
       </template>
       <sort-priority-edit :chart="view" @on-priority-change="onPriorityChange" />
       <template #footer>
@@ -4330,63 +4373,8 @@ span {
     overflow-x: hidden;
     height: 100%;
 
-    :deep(.ed-collapse-item__header) {
-      height: 36px !important;
-      line-height: 36px !important;
-      font-size: 12px !important;
-      padding: 0 !important;
-      font-weight: 500 !important;
-      border-top: unset;
-
-      &.is-active {
-        border-bottom-color: var(--ed-collapse-border-color);
-        color: #1f2329;
-      }
-
-      .ed-collapse-item__arrow {
-        margin: 0 6px 0 8px;
-
-        &.is-active {
-          color: #646a73;
-        }
-      }
-    }
-
     :deep(.ed-collapse-item__content) {
       padding: 16px 10px 0;
-      border: none;
-      :deep(.ed-checkbox) {
-        height: 20px;
-      }
-      .ed-checkbox {
-        height: 20px;
-      }
-    }
-
-    :deep(.style-dark) {
-      .ed-collapse-item__header {
-        &.is-active {
-          color: #fff;
-        }
-
-        .ed-collapse-item__arrow {
-          &.is-active {
-            color: #a6a6a6;
-          }
-        }
-      }
-    }
-    :deep(.ed-collapse-item.ed-collapse--dark .ed-collapse-item__header) {
-      border-color: rgba(255, 255, 255, 0.15);
-
-      &.is-active {
-        color: #fff;
-      }
-      .ed-collapse-item__arrow {
-        &.is-active {
-          color: #a6a6a6;
-        }
-      }
     }
   }
 
@@ -4411,11 +4399,14 @@ span {
       font-size: 12px;
       padding: 0 8px !important;
       margin-right: 12px;
+    }
+
+    :deep(.ed-tabs__item:not(.is-active)) {
       color: var(--custom-tab-color);
     }
-    :deep(.is-active) {
+
+    :deep(.ed-tabs__item.is-active) {
       font-weight: 500;
-      color: var(--ed-color-primary, #3370ff);
     }
 
     :deep(.ed-tabs__nav-scroll) {
@@ -4436,7 +4427,7 @@ span {
   .field-height {
     height: 50%;
 
-    label {
+    .label-top {
       color: #646a73;
       font-size: 12px;
       font-style: normal;
@@ -4711,8 +4702,13 @@ span {
       }
 
       &.active {
-        color: #3370ff;
-        border-color: #3370ff;
+        color: var(--ed-color-primary, #3370ff);
+        border-color: var(--ed-color-primary, #3370ff);
+      }
+
+      &.invalid {
+        color: red !important;
+        border-color: red !important;
       }
     }
 
@@ -4750,6 +4746,7 @@ span {
     align-items: center;
     justify-content: space-between;
     padding: 0 8px;
+    line-height: 22px;
 
     span {
       width: calc(100% - 24px);
@@ -4840,7 +4837,7 @@ span {
     width: 100%;
   }
   .dataset-search-label {
-    height: 22px;
+    height: 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -5174,10 +5171,13 @@ span {
 .chart-type-select {
   width: 100%;
   margin-top: 8px;
-  :deep(.ed-input__prefix-inner > div) {
+  :deep(.ed-select__prefix) {
     padding: 0;
     margin: 0;
-    border: none;
+    &::after {
+      display: none;
+    }
+    height: 20px;
     .chart-type-select-icon {
       width: 23px;
       height: 16px;
@@ -5225,6 +5225,9 @@ span {
 </style>
 
 <style lang="less">
+.ed-dropdown__popper.ed-popper.is-dark:has(.dark-dimension-quota) {
+  border: none;
+}
 :deep(.ed-select-dropdown__item) {
   display: flex;
   align-items: center;

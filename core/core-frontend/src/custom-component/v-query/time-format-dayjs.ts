@@ -20,6 +20,15 @@ function getAround(val = 'month' as ManipulateType, type = 'add', num = 0) {
   if (val === 'week') {
     return new Date(dayjs().endOf('week').add(1, 'day').endOf('day').format('YYYY/MM/DD HH:mm:ss'))
   }
+  return new Date(dayjs()[type](num, val).endOf('day').format('YYYY/MM/DD HH:mm:ss'))
+}
+
+function getAroundStart(val = 'month' as ManipulateType, type = 'add', num = 0) {
+  if (val === 'week') {
+    return new Date(
+      dayjs().startOf('week').add(1, 'day').startOf('day').format('YYYY/MM/DD HH:mm:ss')
+    )
+  }
   return new Date(dayjs()[type](num, val).startOf('day').format('YYYY/MM/DD HH:mm:ss'))
 }
 
@@ -46,26 +55,30 @@ function getCustomRange(relativeToCurrentRange: string): [Date, Date] {
       return getThisWeek()
     case 'LastThreeMonths':
       return [
-        new Date(dayjs().subtract(3, 'month').startOf('month').format('YYYY/MM/DD HH:mm:ss')),
+        new Date(dayjs().subtract(2, 'month').startOf('month').format('YYYY/MM/DD HH:mm:ss')),
         getThisEnd('day')
       ]
     case 'LastSixMonths':
       return [
-        new Date(dayjs().subtract(6, 'month').startOf('month').format('YYYY/MM/DD HH:mm:ss')),
+        new Date(dayjs().subtract(5, 'month').startOf('month').format('YYYY/MM/DD HH:mm:ss')),
         getThisEnd('day')
       ]
     case 'LastTwelveMonths':
       return [
-        new Date(dayjs().subtract(12, 'month').startOf('month').format('YYYY/MM/DD HH:mm:ss')),
+        new Date(dayjs().subtract(11, 'month').startOf('month').format('YYYY/MM/DD HH:mm:ss')),
         getThisEnd('day')
       ]
+    case 'YearToThisMonth':
+      return [new Date(dayjs().startOf('year').format('YYYY/MM/DD HH:mm:ss')), getThisEnd('month')]
+    case 'monthToYesterday':
+      return [new Date(dayjs().startOf('month').format('YYYY/MM/DD HH:mm:ss')), getLastEnd('day')]
     case 'today':
       return [getThisStart('day'), getThisEnd('day')]
     case 'yesterday':
       return [getLastStart('day'), getLastEnd('day')]
     case 'LastThreeDays':
       return [
-        new Date(dayjs().subtract(3, 'day').startOf('day').format('YYYY/MM/DD HH:mm:ss')),
+        new Date(dayjs().subtract(2, 'day').startOf('day').format('YYYY/MM/DD HH:mm:ss')),
         getThisEnd('day')
       ]
     case 'monthBeginning':
@@ -76,4 +89,12 @@ function getCustomRange(relativeToCurrentRange: string): [Date, Date] {
       return [new Date(), new Date()]
   }
 }
-export { getThisStart, getThisEnd, getLastStart, getLastEnd, getAround, getCustomRange }
+export {
+  getThisStart,
+  getThisEnd,
+  getLastStart,
+  getLastEnd,
+  getAround,
+  getCustomRange,
+  getAroundStart
+}

@@ -3,7 +3,7 @@ import icon_copy_filled from '@/assets/svg/icon_copy_filled.svg'
 import icon_dataset from '@/assets/svg/icon_dataset.svg'
 import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
 import icon_intoItem_outlined from '@/assets/svg/icon_into-item_outlined.svg'
-import { debounce } from 'lodash-es'
+import { throttle } from 'lodash-es'
 import icon_rename_outlined from '@/assets/svg/icon_rename_outlined.svg'
 import dvNewFolder from '@/assets/svg/dv-new-folder.svg'
 import icon_fileAdd_outlined from '@/assets/svg/icon_file-add_outlined.svg'
@@ -48,7 +48,7 @@ import {
 import { HandleMore } from '@/components/handle-more'
 import { Icon } from '@/components/icon-custom'
 import { useMoveLine } from '@/hooks/web/useMoveLine'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router_2'
 import CreatDsGroup from './form/CreatDsGroup.vue'
 import type { BusiTreeNode, BusiTreeRequest } from '@/models/tree/TreeNode'
 import {
@@ -138,7 +138,6 @@ const state = reactive({
   curSortType: 'time_desc'
 })
 
-const resourceGroupOpt = ref()
 const curCanvasType = ref('')
 const mounted = ref(false)
 const openType = wsCache.get('open-backend') === '1' ? '_self' : '_blank'
@@ -397,6 +396,7 @@ const save = ({ logic, items, errorMessage }) => {
   table.value.id = nodeInfo.id
   table.value.row = 100000
   table.value.filename = exportForm.value.name
+  table.value.dataEaseBi = isDataEaseBi.value || appStore.getIsIframe
   if (errorMessage) {
     ElMessage.error(errorMessage)
     return
@@ -405,10 +405,17 @@ const save = ({ logic, items, errorMessage }) => {
   exportDatasetLoading.value = true
   exportDatasetData(table.value)
     .then(res => {
-      if (res.code === 0) {
-        openMessageLoading(exportData)
+      if (isDataEaseBi.value || appStore.getIsIframe) {
+        const blob = new Blob([res.data], { type: 'application/vnd.ms-excel' })
+        const link = document.createElement('a')
+        link.style.display = 'none'
+        link.href = URL.createObjectURL(blob)
+        link.download = table.value.filename + '.xlsx' // 下载的文件名
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
       } else {
-        ElMessage.error(res.msg)
+        openMessageLoading(exportData)
       }
     })
     .finally(() => {
@@ -785,7 +792,7 @@ const getMenuList = (val: boolean) => {
       ].concat(menuList)
 }
 
-const proxyAllowDrop = debounce((arg1, arg2) => {
+const proxyAllowDrop = throttle((arg1, arg2) => {
   const flagArray = ['dashboard', 'dataV', 'dataset', 'datasource']
   const flag = flagArray.findIndex(item => item === 'dataset')
   if (flag < 0 || !isFreeFolder(arg2, flag + 1)) {
@@ -1040,8 +1047,8 @@ const proxyAllowDrop = debounce((arg1, arg2) => {
                     key="structPreview"
                     :columns="columns"
                     v-loading="dataPreviewLoading"
-                    header-class="header-cell"
                     :data="tableData"
+                    header-class="excel-header-cell"
                     :width="width"
                     :height="height"
                     fixed
@@ -1057,7 +1064,6 @@ const proxyAllowDrop = debounce((arg1, arg2) => {
                 <el-table
                   v-loading="dataPreviewLoading"
                   class="dataset-preview_table"
-                  header-class="header-cell"
                   :data="tableData"
                   @row-click="rowClick"
                   key="dataPreview"
@@ -1217,6 +1223,10 @@ const proxyAllowDrop = debounce((arg1, arg2) => {
     background: #eff0f1;
   }
 }
+.custom-tree {
+  height: calc(100vh - 172px);
+  padding: 0 8px;
+}
 .dataset-manage {
   display: flex;
   width: 100%;
@@ -1226,6 +1236,9 @@ const proxyAllowDrop = debounce((arg1, arg2) => {
 
   &.de-100vh {
     height: 100vh;
+    .custom-tree {
+      height: calc(100vh - 122px);
+    }
   }
 
   .resource-area {
@@ -1390,11 +1403,6 @@ const proxyAllowDrop = debounce((arg1, arg2) => {
       }
     }
   }
-}
-
-.custom-tree {
-  height: calc(100vh - 172px);
-  padding: 0 8px;
 }
 
 .custom-tree-node {

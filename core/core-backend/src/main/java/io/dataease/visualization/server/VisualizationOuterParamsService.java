@@ -9,9 +9,11 @@ import io.dataease.api.visualization.dto.VisualizationOuterParamsDTO;
 import io.dataease.api.visualization.dto.VisualizationOuterParamsInfoDTO;
 import io.dataease.api.visualization.response.VisualizationOuterParamsBaseResponse;
 import io.dataease.auth.DeLinkPermit;
+import io.dataease.constant.CommonConstants;
 import io.dataease.dataset.dao.auto.entity.CoreDatasetTable;
 import io.dataease.dataset.dao.auto.mapper.CoreDatasetTableMapper;
 import io.dataease.constant.DeTypeConstants;
+import io.dataease.dataset.utils.FieldUtils;
 import io.dataease.extensions.view.dto.SqlVariableDetails;
 import io.dataease.utils.BeanUtils;
 import io.dataease.utils.JsonUtil;
@@ -20,6 +22,7 @@ import io.dataease.visualization.dao.auto.mapper.*;
 import io.dataease.visualization.dao.ext.mapper.ExtVisualizationOuterParamsMapper;
 import jakarta.annotation.Resource;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -57,6 +60,10 @@ public class VisualizationOuterParamsService implements VisualizationOuterParams
 
     @Resource
     private CoreDatasetTableMapper coreDatasetTableMapper;
+    @Autowired
+    private DataVisualizationServer dataVisualizationServer;
+    @Autowired
+    private SnapshotDataVisualizationInfoMapper snapshotDataVisualizationInfoMapper;
 
 
     @Override
@@ -125,7 +132,12 @@ public class VisualizationOuterParamsService implements VisualizationOuterParams
     public List<CoreDatasetGroupVO> queryDsWithVisualizationId(String visualizationId) {
         List<CoreDatasetGroupVO> result = extOuterParamsMapper.queryDsWithVisualizationId(visualizationId);
         if (!CollectionUtils.isEmpty(result)) {
+            List<Long> activeViewIds = dataVisualizationServer.getEnabledViewIds(Long.valueOf(visualizationId), CommonConstants.RESOURCE_TABLE.SNAPSHOT);
             result.forEach(coreDatasetGroupVO -> {
+                // 过滤已删除的图表
+                if(!CollectionUtils.isEmpty(coreDatasetGroupVO.getDatasetViews())){
+                    coreDatasetGroupVO.setDatasetViews(coreDatasetGroupVO.getDatasetViews().stream().filter(item ->activeViewIds.contains(item.getChartId())).toList());
+                }
                 List<CoreDatasetTableFieldVO> fields = coreDatasetGroupVO.getDatasetFields();
                 QueryWrapper<CoreDatasetTable> wrapper = new QueryWrapper<>();
                 wrapper.eq("dataset_group_id", coreDatasetGroupVO.getId());
@@ -139,7 +151,7 @@ public class VisualizationOuterParamsService implements VisualizationOuterParams
                             List<SqlVariableDetails> defaultsSqlVariableDetails = JsonUtil.parseList(sqlVarDetail, listTypeReference);
                             defaultsSqlVariableDetails.forEach(sqlVariableDetails -> {
                                 String varFieldId = coreDatasetTable.getId() + "|DE|" + sqlVariableDetails.getVariableName();
-                                fields.add(new CoreDatasetTableFieldVO(varFieldId, sqlVariableDetails.getVariableName(), DeTypeConstants.DE_STRING));
+                                fields.add(new CoreDatasetTableFieldVO(varFieldId, sqlVariableDetails.getVariableName(), FieldUtils.transType2DeType(sqlVariableDetails.getType().get(0).contains("DATETIME") ? "DATETIME" : sqlVariableDetails.getType().get(0))));
                             });
                         }
                     });

@@ -4,6 +4,7 @@ import {
 } from '@/views/chart/components/js/panel/types/impl/g2plot'
 import type { DualAxes, DualAxesOptions } from '@antv/g2plot/esm/plots/dual-axes'
 import {
+  configRoundAngle,
   configPlotTooltipEvent,
   getAnalyse,
   getLabel,
@@ -42,6 +43,7 @@ import {
 } from '@/views/chart/components/editor/util/chart'
 import type { Options } from '@antv/g2plot/esm'
 import { Group } from '@antv/g-canvas'
+import { extremumEvt } from '@/views/chart/components/js/extremumUitl'
 
 const { t } = useI18n()
 const DEFAULT_DATA = []
@@ -119,7 +121,6 @@ export class ColumnLineMix extends G2PlotChartView<DualAxesOptions, DualAxes> {
         valueExt: d.value
       }
     })
-
     // options
     const initOptions: DualAxesOptions = {
       data: [data1, data2],
@@ -129,6 +130,7 @@ export class ColumnLineMix extends G2PlotChartView<DualAxesOptions, DualAxes> {
       geometryOptions: [
         {
           geometry: data1Type,
+          marginRatio: 0,
           color: [],
           isGroup: isGroup,
           isStack: isStack,
@@ -176,6 +178,7 @@ export class ColumnLineMix extends G2PlotChartView<DualAxesOptions, DualAxes> {
 
     newChart.on('point:click', action)
     newChart.on('interval:click', action)
+    extremumEvt(newChart, chart, options, container)
     configPlotTooltipEvent(chart, newChart)
     return newChart
   }
@@ -205,11 +208,12 @@ export class ColumnLineMix extends G2PlotChartView<DualAxesOptions, DualAxes> {
         pre[next.id] = next
         return pre
       }, {})
+      const textBaseline =
+        this.getLeftType() === 'line' ? 'bottom' : axisType === 'yAxis' ? 'top' : 'bottom'
       tempLabel.style.fill = DEFAULT_LABEL.color
       const label = {
         fields: [],
         ...tempLabel,
-        offsetY: -8,
         formatter: (data: Datum) => {
           if (!labelAttr.seriesLabelFormatter?.length) {
             return data.value
@@ -230,7 +234,7 @@ export class ColumnLineMix extends G2PlotChartView<DualAxesOptions, DualAxes> {
               y: 0,
               text: value,
               textAlign: 'start',
-              textBaseline: 'top',
+              textBaseline,
               fontSize: labelCfg.fontSize,
               fontFamily: chart.fontFamily,
               fill: labelCfg.color
@@ -294,18 +298,9 @@ export class ColumnLineMix extends G2PlotChartView<DualAxesOptions, DualAxes> {
       tempOption.geometryOptions[1].smooth = smooth
       tempOption.geometryOptions[1].point = point
       tempOption.geometryOptions[1].lineStyle = lineStyle
-
-      if (s.radiusColumnBar === 'roundAngle') {
-        const columnStyle = {
-          radius: [
-            s.columnBarRightAngleRadius,
-            s.columnBarRightAngleRadius,
-            s.columnBarRightAngleRadius,
-            s.columnBarRightAngleRadius
-          ]
-        }
-        tempOption.geometryOptions[0].columnStyle = columnStyle
-        tempOption.geometryOptions[1].columnStyle = columnStyle
+      tempOption.geometryOptions[0] = {
+        ...tempOption.geometryOptions[0],
+        ...configRoundAngle(chart, 'columnStyle')
       }
     }
 
@@ -330,7 +325,7 @@ export class ColumnLineMix extends G2PlotChartView<DualAxesOptions, DualAxes> {
   }
 
   setupDefaultOptions(chart: ChartObj): ChartObj {
-    const { customAttr, senior } = chart
+    const { senior } = chart
     if (
       senior.functionCfg.emptyDataStrategy == undefined ||
       senior.functionCfg.emptyDataStrategy === 'ignoreData'
@@ -657,7 +652,7 @@ export class ColumnLineMix extends G2PlotChartView<DualAxesOptions, DualAxes> {
       this.configYAxis,
       this.configAnalyse,
       this.configEmptyDataStrategy
-    )(chart, options)
+    )(chart, options, {}, this)
   }
 
   constructor(name = 'chart-mix') {

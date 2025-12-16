@@ -1,4 +1,4 @@
-<p align="center"><a href="https://dataease.io"><img src="https://dataease.oss-cn-hangzhou.aliyuncs.com/img/dataease-logo.png" alt="DataEase" width="300" /></a></p>
+<p align="center"><a href="https://dataease.cn"><img src="https://dataease.oss-cn-hangzhou.aliyuncs.com/img/dataease-logo.png" alt="DataEase" width="300" /></a></p>
 <h3 align="center">人人可用的开源 BI 工具</h3>
 <p align="center">
   <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://img.shields.io/github/license/dataease/dataease?color=%231890FF" alt="License: GPL v3"></a>
@@ -6,6 +6,7 @@
   <a href="https://github.com/dataease/dataease"><img src="https://img.shields.io/github/stars/dataease/dataease?color=%231890FF&style=flat-square" alt="GitHub Stars"></a>
   <a href="https://github.com/dataease/dataease/releases"><img src="https://img.shields.io/github/v/release/dataease/dataease" alt="GitHub release"></a>
   <a href="https://gitee.com/fit2cloud-feizhiyun/DataEase"><img src="https://gitee.com/fit2cloud-feizhiyun/DataEase/badge/star.svg?theme=gvp" alt="Gitee Stars"></a>
+  <a href="https://gitcode.com/feizhiyun/DataEase"><img src="https://gitcode.com/feizhiyun/DataEase/star/badge.svg" alt="GitCode Stars"></a>
 </p>
 <p align="center">
   <a href="/README.md"><img alt="中文(简体)" src="https://img.shields.io/badge/中文(简体)-d9d9d9"></a>
@@ -21,6 +22,9 @@
   <a href="/docs/README.id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-d9d9d9"></a>
   <a href="/docs/README.tr.md"><img alt="Türkçe" src="https://img.shields.io/badge/Türkçe-d9d9d9"></a>
 </p>
+<p align="center">
+  <a href="https://trendshift.io/repositories/1563" target="_blank"><img src="https://trendshift.io/api/badge/repositories/1563" alt="dataease%2Fdataease | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</p>
 
 ------------------------------
 
@@ -33,7 +37,8 @@ DataEase 是开源的 BI 工具，帮助用户快速分析数据并洞察业务�
 -   开源开放：零门槛，线上快速获取和安装，按月迭代；
 -   简单易用：极易上手，通过鼠标点击和拖拽即可完成分析；
 -   全场景支持：多平台安装和多样化嵌入支持；
--   安全分享：支持多种数据分享方式，确保数据安全。
+-   安全分享：支持多种数据分享方式，确保数据安全；
+-   AI 加持：无缝集成 [SQLBot](https://github.com/dataease/SQLBot) 实现智能问数。
 
 **DataEase 支持的数据源：**
 
@@ -43,13 +48,13 @@ DataEase 是开源的 BI 工具，帮助用户快速分析数据并洞察业务�
 -   数据文件： Excel、CSV 等；
 -   API 数据源。
 
-如果您需要向团队介绍 DataEase，可以使用这个 [官方 PPT 材料](https://fit2cloud.com/dataease/download/introduce-dataease_202501.pdf)。
+如果您需要向团队介绍 DataEase，可以使用这个 [官方 PPT 材料](https://fit2cloud.com/dataease/download/introduce-dataease_202511.pdf)。
 
 ## 快速开始
 
 **桌面版：**
 
-你可以在 PC 上安装 DataEasae 桌面版，下载地址为：https://dataease.cn/
+你可以在 PC 上安装 DataEasae 桌面版，下载地址为：https://dataease.cn/desktop/index.html
 
 **服务器版：**
 
@@ -64,11 +69,15 @@ curl -sSL https://dataease.oss-cn-hangzhou.aliyuncs.com/quick_start_v2.sh | bash
 
 你也可以通过 [1Panel 应用商店](https://dataease.io/docs/v2/installation/1panel_installation/) 快速部署 DataEase。如果是用于生产环境，推荐使用 [离线安装包方式](https://dataease.io/docs/v2/installation/offline_INSTL_and_UPG/) 进行安装部署。
 
-如你有更多问题，可以查看在线文档，或者通过论坛与我们交流。
+如你有更多问题，可以查看在线文档，或者通过论坛和交流群与我们交流。
 
+-   [视频介绍](https://www.bilibili.com/video/BV1Y8dAYLErb/)
 -   [在线文档](https://dataease.io/docs/)
 -   [社区论坛](https://bbs.fit2cloud.com/c/de/6)
--   [案例研究](/docs/use-cases.md)
+-   微信交流群
+
+  <img width="150" height="150" alt="image" src="https://github.com/user-attachments/assets/a8e4cd48-ed0f-4754-ba34-d047063b1633" />
+
 
 ## UI 展示
 
@@ -98,6 +107,7 @@ curl -sSL https://dataease.oss-cn-hangzhou.aliyuncs.com/quick_start_v2.sh | bash
 - [1Panel](https://github.com/1panel-dev/1panel/) - 现代化、开源的 Linux 服务器运维管理面板
 - [MaxKB](https://github.com/1panel-dev/MaxKB/) - 基于 LLM 大语言模型的开源知识库问答系统
 - [JumpServer](https://github.com/jumpserver/jumpserver/) - 广受欢迎的开源堡垒机
+- [Cordys CRM](https://github.com/1Panel-dev/CordysCRM) - 新一代的开源 AI CRM 系统
 - [Halo](https://github.com/halo-dev/halo/) - 强大易用的开源建站工具
 - [MeterSphere](https://github.com/metersphere/metersphere/) - 新一代的开源持续测试工具
 

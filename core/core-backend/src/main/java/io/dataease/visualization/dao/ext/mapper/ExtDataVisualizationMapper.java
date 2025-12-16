@@ -57,6 +57,8 @@ public interface ExtDataVisualizationMapper {
 
     void deleteViewsBatch(@Param("ids") Set<Long> ids,@Param("resourceTable") String resourceTable);
 
+    void deleteUselessViewsBatchSnapshot(@Param("ids") List<Long> ids,@Param("dvId") Long dvId);
+
     UserFormVO queryInnerUserInfo(@Param("id") Long id);
 
     void snapshotDataV(@Param("dvId") Long dvId);
@@ -98,4 +100,7 @@ public interface ExtDataVisualizationMapper {
     void restoreOuterParamsInfo(@Param("dvId") Long dvId);
 
     void restoreOuterParams(@Param("dvId") Long dvId);
+
+    @Select("select status from data_visualization_info where id = #{dvId}")
+    Integer findDvInfoStats(@Param("dvId") Long dvId);
 }

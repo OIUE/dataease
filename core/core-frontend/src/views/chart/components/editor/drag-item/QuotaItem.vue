@@ -80,7 +80,7 @@ const emit = defineEmits([
 
 const { item, chart } = toRefs(props)
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes || 'dark'
 })
 watch(
   [() => props.quotaData, () => props.item, () => props.chart.type],
@@ -210,23 +210,12 @@ const beforeSort = type => {
   }
 }
 
-const switchChartType = param => {
-  item.value.chartType = param.type
-  emit('onQuotaItemChange', item.value)
-}
-
 const summary = param => {
   item.value.summary = param.type
   emit('onQuotaItemChange', item.value)
 }
 
 const beforeSummary = type => {
-  return {
-    type: type
-  }
-}
-
-const beforeSwitchType = type => {
   return {
     type: type
   }
@@ -315,14 +304,23 @@ const showHideIcon = computed(() => {
   return ['tale-info', 'table-normal'].includes(props.chart.type) && item.value.hide
 })
 
+const NOT_SUPPORT_SORT = [
+  'circle-packing',
+  'indicator',
+  'liquid',
+  'gauge',
+  'word-cloud',
+  'stock-line',
+  'treemap'
+]
+
 const showSort = computed(() => {
   return (
     props.type !== 'extLabel' &&
     props.type !== 'extTooltip' &&
     props.type !== 'extBubble' &&
-    !['chart-mix', 'indicator', 'liquid', 'gauge', 'word-cloud', 'stock-line'].includes(
-      chart.value.type
-    )
+    !NOT_SUPPORT_SORT.includes(chart.value.type) &&
+    !chart.value.type.includes('chart-mix')
   )
 })
 
@@ -395,6 +393,7 @@ onMounted(() => {
             <span v-if="item.summary !== ''" class="item-right-summary">
               ({{ t('chart.' + item.summary) }})
             </span>
+            <span :data-id="item.id" class="node-id_private"></span>
           </span>
         </el-tooltip>
         <span
@@ -1000,6 +999,14 @@ span {
     background-color: rgba(31, 35, 41, 0.1);
   }
   &.dark-dimension-quota {
+    background-color: #292929;
+    border: 1px solid #434343;
+    :deep(.ed-dropdown-menu__item--divided) {
+      border-color: #ebebeb26;
+    }
+    :deep(.ed-dropdown-menu__item:not(.is-disabled):hover) {
+      background-color: #ebebeb1a;
+    }
     .inner-dropdown-menu {
       color: rgba(235, 235, 235, 1);
     }

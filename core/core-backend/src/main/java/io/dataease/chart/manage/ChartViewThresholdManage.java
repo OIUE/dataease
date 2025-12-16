@@ -20,6 +20,7 @@ import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -34,8 +35,8 @@ public class ChartViewThresholdManage {
     @Resource
     private ChartViewManege chartViewManege;
 
-    public String convertThresholdRules(Long chartId, String thresholdRules) {
-        ChartViewDTO details = chartViewManege.getDetails(chartId);
+    public String convertThresholdRules(Long chartId, String thresholdRules, String resourceTable) {
+        ChartViewDTO details = chartViewManege.getDetails(chartId, resourceTable);
         return convertThresholdRules(details, thresholdRules);
     }
 
@@ -170,7 +171,9 @@ public class ChartViewThresholdManage {
                 int unit = Integer.parseInt(map.get("unit").toString());
                 int suffix = Integer.parseInt(map.get("suffix").toString());
                 String time = map.get("time").toString();
-
+                if (unit > 3) {
+                    time = getCustomTimeValue(format, unit, suffix, count, false);
+                }
                 List<String> unitLabels = null;
                 if (StringUtils.equalsIgnoreCase("YYYY", format)) {
                     unitLabels = List.of(Translator.get("i18n_time_year"));
@@ -181,7 +184,7 @@ public class ChartViewThresholdManage {
                 } else if (StringUtils.equalsIgnoreCase("HH:mm:ss", format)) {
                     DEException.throwException("纯时间格式不支持动态格式");
                 } else {
-                    unitLabels = List.of(Translator.get("i18n_time_year"), Translator.get("i18n_time_month"), Translator.get("i18n_time_date"));
+                    unitLabels = List.of(Translator.get("i18n_time_year"), Translator.get("i18n_time_month"), Translator.get("i18n_time_date"), Translator.get("i18n_time_hour"));
                 }
                 String unitText = unitLabels.get(unit - 1);
                 String suffixText = Translator.get("i18n_time_ago");
@@ -190,7 +193,7 @@ public class ChartViewThresholdManage {
                 }
                 String timeText = "";
                 if (StringUtils.containsIgnoreCase(format, "HH")) {
-                    timeText = " " + time;
+                    timeText = " (" + time + ")";
                 }
                 return count + " " + unitText + suffixText + timeText;
             } else {
@@ -251,7 +254,7 @@ public class ChartViewThresholdManage {
         String thresholdRules = request.getThresholdRules();
         Long chartId = request.getChartId();
         try {
-            ChartViewDTO chart = chartViewManege.getChart(chartId);
+            ChartViewDTO chart = chartViewManege.getChart(chartId, request.getResourceTable(), true);
             Map<String, Object> data = null;
             if (ObjectUtils.isEmpty(chart) || MapUtils.isEmpty(data = chart.getData())) {
                 return new ThresholdCheckVO(false, null, "查询图表异常！", null);
@@ -280,11 +283,19 @@ public class ChartViewThresholdManage {
                 DatasetTableFieldDTO fieldDTO = fieldMap.get(id);
                 if (ObjectUtils.isEmpty(fieldDTO)) continue;
                 String fieldDTOName = fieldDTO.getName();
-                String dataeaseName = fieldDTO.getDataeaseName();
-                List<String> valueList = rows.stream().map(row -> ObjectUtils.isEmpty(row.get(dataeaseName)) ? null : row.get(dataeaseName).toString()).collect(Collectors.toList());
-                String replacement = fieldDTOName + ": " + JsonUtil.toJSONString(valueList);
+                /*String dataeaseName = fieldDTO.getDataeaseName();
+                String replacement = null;
+                if (fieldDTO.getDeType().equals(DeTypeConstants.DE_FLOAT) || fieldDTO.getDeType().equals(DeTypeConstants.DE_INT)) {
+                    List<String> valueList = rows.stream().map(row -> ObjectUtils.isEmpty(row.get(dataeaseName)) ? null : stripTrailingZeros2String(row.get(dataeaseName))).collect(Collectors.toList());
+                    replacement = fieldDTOName + ": " + JsonUtil.toJSONString(valueList);
+                } else {
+                    List<String> valueList = rows.stream().map(row -> ObjectUtils.isEmpty(row.get(dataeaseName)) ? null : row.get(dataeaseName).toString()).collect(Collectors.toList());
+                    replacement = fieldDTOName + ": " + JsonUtil.toJSONString(valueList);
+                }
+
                 // 替换文本
-                matcher.appendReplacement(sb, replacement);
+                matcher.appendReplacement(sb, replacement);*/
+                matcher.appendReplacement(sb, fieldDTOName);
             }
             matcher.appendTail(sb);
 
@@ -295,6 +306,14 @@ public class ChartViewThresholdManage {
             LogUtil.error(e.getMessage(), new Throwable(e));
             return new ThresholdCheckVO(false, null, e.getMessage(), null);
         }
+    }
+
+    private String stripTrailingZeros2String(Object value) {
+        if (ObjectUtils.isEmpty(value)) {
+            return null;
+        }
+        if (!(value instanceof BigDecimal)) return value.toString();
+        return ((BigDecimal) value).stripTrailingZeros().toPlainString();
     }
 
     private void chartDynamicMap(List<Map<String, Object>> rows, FilterTreeObj conditionTree, Map<Long, DatasetTableFieldDTO> fieldMap) {
@@ -332,7 +351,7 @@ public class ChartViewThresholdManage {
                 int suffix = Integer.parseInt(map.get("suffix").toString());
                 String time = map.get("time").toString();
                 String timeValue = getCustomTimeValue(format, unit, suffix, count, false);
-                if (StringUtils.containsIgnoreCase(format, "yyyy-MM-dd HH") && StringUtils.isNotBlank(time)) {
+                if (unit < 4 && StringUtils.containsIgnoreCase(format, "yyyy-MM-dd HH") && StringUtils.isNotBlank(time)) {
                     return timeValue + " " + time;
                 }
                 return timeValue;
@@ -377,7 +396,7 @@ public class ChartViewThresholdManage {
         if (hasTime) {
             now = now.withHour(0).withMinute(0).withSecond(0);
         } else {
-            len = Math.min(len, 10);
+            len = unit > 3 ? len : Math.min(len, 10);
         }
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(fullFormat.substring(0, len));
         if (count == 0) {
@@ -393,11 +412,16 @@ public class ChartViewThresholdManage {
                 return now.minusMonths(count).format(formatter);
             }
             return now.plusMonths(count).format(formatter);
-        } else {
+        } else if (unit == 3) {
             if (suffix == 1) {
                 return now.minusDays(count).format(formatter);
             }
             return now.plusDays(count).format(formatter);
+        } else {
+            if (suffix == 1) {
+                return now.minusHours(count).format(formatter);
+            }
+            return now.plusHours(count).format(formatter);
         }
     }
 

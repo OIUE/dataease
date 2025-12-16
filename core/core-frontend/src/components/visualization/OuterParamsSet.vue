@@ -50,7 +50,7 @@
                           style="width: 100%"
                           v-model="data.paramName"
                           :placeholder="$t('visualization.input_param_name')"
-                          @blur="closeEdit"
+                          @blur="closeEdit(data)"
                         />
                       </div>
                       <span class="tree-select-field" v-else-if="data.paramName">
@@ -166,7 +166,9 @@
                             <Icon name="icon_dataset"><icon_dataset class="svg-icon" /></Icon>
                           </el-icon>
                         </div>
-                        <span>{{ baseDatasetInfo.name }}</span>
+                        <span :title="baseDatasetInfo.name" class="ellipsis">{{
+                          baseDatasetInfo.name
+                        }}</span>
                       </div>
                       <div style="flex: 1; margin-left: -16px">
                         <el-select
@@ -253,7 +255,13 @@
                               ></component
                             ></Icon>
                           </div>
-                          <span style="font-size: 12px"> {{ viewInfo.chartName }}</span>
+                          <span
+                            class="ellipsis"
+                            :title="viewInfo.chartName"
+                            style="font-size: 12px"
+                          >
+                            {{ viewInfo.chartName }}</span
+                          >
                         </div>
                       </div>
                     </div>
@@ -326,7 +334,7 @@ import edit from '@/assets/svg/icon_rename_outlined.svg'
 import icon_more_vertical_outlined from '@/assets/svg/icon_more-vertical_outlined.svg'
 import filterParams from '@/assets/svg/filter-params.svg'
 import icon_dataset from '@/assets/svg/icon_dataset.svg'
-import { ref, reactive, computed, nextTick } from 'vue'
+import { ref, reactive, nextTick } from 'vue'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
 import { ElCol, ElIcon, ElInput, ElMessage } from 'element-plus-secondary'
@@ -464,11 +472,18 @@ const validateArgs = (val, id) => {
   }
 }
 
-const viewSelectedField = computed(() =>
-  state.outerParamsInfo?.targetViewInfoList?.map(targetViewInfo => targetViewInfo.targetViewId)
-)
-
-const closeEdit = () => {
+const closeEdit = params => {
+  if (!params.paramName || params.paramName.length < 2 || params.paramName.length > 25) {
+    ElMessage({
+      message: t('commons.params_value') + t('common.input_limit', [2, 25]),
+      type: 'warning',
+      showClose: true
+    })
+    if (params.paramName.length > 25) {
+      params.paramName = params.paramName.splice(0.25)
+    }
+    return
+  }
   curEditDataId.value = null
 }
 
@@ -478,18 +493,6 @@ const outerParamsOperation = (cmd, node, data) => {
   } else if (cmd === 'delete') {
     removeOuterParamsInfo(node, data)
   }
-}
-
-const fieldIdDisabledCheck = targetViewInfo => {
-  return (
-    state.viewIdFieldArrayMap[targetViewInfo.targetViewId] &&
-    state.viewIdFieldArrayMap[targetViewInfo.targetViewId].length === 1 &&
-    state.viewIdFieldArrayMap[targetViewInfo.targetViewId][0].id === 'empty'
-  )
-}
-
-const getFieldArray = id => {
-  return state.viewIdFieldArrayMap[id]
 }
 
 const initParams = async () => {
@@ -507,7 +510,7 @@ const initParams = async () => {
       })
     } else if (componentItem.component === 'DeTabs') {
       componentItem.propValue.forEach(tabItem => {
-        tabItem.componentData.forEach(tabComponent => {
+        tabItem.componentData?.forEach(tabComponent => {
           if (tabComponent.component === 'VQuery') {
             state.baseFilterInfo.push(tabComponent)
           }
@@ -719,28 +722,6 @@ const getPanelViewList = dvId => {
   })
 }
 
-const addOuterParamsField = () => {
-  state.outerParamsInfo.targetViewInfoList.push({
-    targetViewId: '',
-    targetFieldId: ''
-  })
-}
-const deleteOuterParamsField = index => {
-  state.outerParamsInfo.targetViewInfoList.splice(index, 1)
-}
-
-const viewInfoOnChange = targetViewInfo => {
-  if (
-    state.viewIdFieldArrayMap[targetViewInfo.targetViewId] &&
-    state.viewIdFieldArrayMap[targetViewInfo.targetViewId].length === 1 &&
-    state.viewIdFieldArrayMap[targetViewInfo.targetViewId][0].id === 'empty'
-  ) {
-    targetViewInfo.targetFieldId = 'empty'
-  } else {
-    targetViewInfo.targetFieldId = null
-  }
-}
-
 const initSelected = data => {
   nextTick(() => {
     outerParamsInfoTree.value.setCurrentKey(data.paramsInfoId)
@@ -877,7 +858,7 @@ defineExpose({
 }
 
 .view-type-icon {
-  color: #3370ff;
+  color: var(--ed-color-primary, #3370ff);
   width: 22px;
   height: 14px;
 }
@@ -1153,6 +1134,13 @@ defineExpose({
   cursor: pointer;
   font-size: 14px;
   color: #646a73;
-  margin: 10px 0 0 4px;
+  margin: 3px 0 0 4px;
+}
+
+.ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 220px;
 }
 </style>

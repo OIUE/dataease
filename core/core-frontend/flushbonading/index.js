@@ -1,6 +1,6 @@
 import { WritableStream } from 'htmlparser2/lib/WritableStream'
 import fs from 'node:fs'
-import pkg from '../package.json' assert { type: "json" };
+import pkg from '../package.json' with { type: "json" };
 const suffix = `${pkg.version}-${pkg.name}`
 
 const eleArr = []
@@ -75,7 +75,7 @@ htmlStream.pipe(parserStream).on('finish', () => {
   eleArr.forEach((ele) => {
     produceTag(ele.attributes, ele.name)
   })
-  document.documentElement.insertBefore(head, document.querySelector('head'))`
+  document.documentElement.insertBefore(head, document.querySelector('body'))`
 
   fs.writeFile(`../dist/js/div_import_${suffix}.js`, templateJs, err => {
   })

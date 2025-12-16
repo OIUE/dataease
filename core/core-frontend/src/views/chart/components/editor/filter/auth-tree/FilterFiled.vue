@@ -23,6 +23,7 @@ export interface Item {
   name: string
   value: number
   timeValue: string
+  timeType?: string
 }
 
 type Props = {
@@ -312,7 +313,15 @@ const addFields = () => {
   }
   showTextArea.value = false
 }
-
+const timeDialog = ref()
+const showTimeDialog = (obj: any) => {
+  if (obj.deType !== 1) return
+  timeDialog.value.init(obj.timeType, obj.timeValue)
+}
+const saveTime = (type, value) => {
+  item.value.timeType = type
+  item.value.timeValue = value
+}
 const emits = defineEmits(['update:item', 'del'])
 </script>
 
@@ -375,6 +384,7 @@ const emits = defineEmits(['update:item', 'del'])
           size="small"
           @change="filterTypeChange"
           v-model="item.filterType"
+          class="w181"
           :placeholder="t('auth.select')"
         >
           <el-option
@@ -435,7 +445,12 @@ const emits = defineEmits(['update:item', 'del'])
               effect="light"
               :content="item.timeValue"
               placement="top"
-              ><el-input class="w70 mar5" size="small" v-model="item.timeValue"
+              ><el-input
+                readonly
+                @click="showTimeDialog(item)"
+                class="w70 mar5"
+                size="small"
+                v-model="item.timeValue"
             /></el-tooltip>
             <el-input v-else class="w70 mar5" size="small" v-model="item.value" />
             <div class="bottom-line"></div>
@@ -539,6 +554,7 @@ const emits = defineEmits(['update:item', 'del'])
       </el-icon>
     </div>
   </div>
+  <TimeSetDialog @saveTime="saveTime" ref="timeDialog"></TimeSetDialog>
 </template>
 
 <style lang="less" scoped>
@@ -586,11 +602,15 @@ const emits = defineEmits(['update:item', 'del'])
   }
 
   .w100.ed-select {
-    width: 100px;
+    width: 100px !important;
+  }
+
+  .w181.ed-select {
+    width: 181px !important;
   }
 
   .w70 {
-    width: 70px;
+    width: 70px !important;
   }
 
   .mar5 {
@@ -676,11 +696,12 @@ const emits = defineEmits(['update:item', 'del'])
     }
   }
 
-  :deep(.ed-input__wrapper) {
+  :deep(.ed-input__wrapper),
+  :deep(.ed-select__wrapper) {
     background-color: #f8f8fa;
     border: none;
     border-radius: 0;
-    box-shadow: none;
+    box-shadow: none !important;
     height: 26px;
     font-family: var(--de-custom_font, 'PingFang');
     word-wrap: break-word;
@@ -910,9 +931,9 @@ const emits = defineEmits(['update:item', 'del'])
           line-height: 26px;
           border-radius: 4px;
           padding: 0 4px;
-          color: #3370ff;
+          color: var(--ed-color-primary, #3370ff);
           &:hover {
-            background-color: #3370ff1a;
+            background-color: var(--ed-color-primary-1a, #3370ff1a);
           }
         }
       }

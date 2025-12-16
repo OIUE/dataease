@@ -15,6 +15,8 @@ import SeniorStyleSetting from '@/components/dashboard/subject-setting/dashboard
 import Icon from '../icon-custom/src/Icon.vue'
 import CanvasBaseSetting from '@/components/visualization/CanvasBaseSetting.vue'
 import { useI18n } from '@/hooks/web/useI18n'
+import ValueFormatterSetting from '@/components/dashboard/subject-setting/dashboard-style/ValueFormatterSetting.vue'
+import { formatterViewInfo } from '@/views/chart/components/js/formatter'
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
 const { canvasStyleData, canvasViewInfo } = storeToRefs(dvMainStore)
@@ -26,12 +28,17 @@ const screenAdaptorList = [
   { label: t('visualization.screen_adaptor_width_first'), value: 'widthFirst' },
   { label: t('visualization.screen_adaptor_height_first'), value: 'heightFirst' },
   { label: t('visualization.screen_adaptor_full'), value: 'full' },
-  { label: t('visualization.screen_adaptor_keep'), value: 'keep' }
+  { label: t('visualization.screen_adaptor_keep'), value: 'keep' },
+  { label: t('visualization.screen_adaptor_keep_proportion'), value: 'keepProportion' }
 ]
 const init = () => {
   nextTick(() => {
     canvasAttrInit = true
   })
+}
+
+const onFormatterItemChange = val => {
+  themeAttrChange('formatterCfg', 'formatterCfg', val)
 }
 
 const onColorChange = val => {
@@ -52,7 +59,9 @@ const themeAttrChange = (custom, property, value) => {
     Object.keys(canvasViewInfo.value).forEach(function (viewId) {
       try {
         const viewInfo = canvasViewInfo.value[viewId]
-        if (custom === 'customAttr') {
+        if (custom === 'formatterCfg') {
+          formatterViewInfo(viewInfo, value)
+        } else if (custom === 'customAttr') {
           if (viewInfo.type === 'flow-map') {
             const { customAttr } = viewInfo
             const tmpValue = cloneDeep(value)
@@ -74,6 +83,9 @@ const themeAttrChange = (custom, property, value) => {
           })
         }
         useEmitt().emitter.emit('renderChart-' + viewId, viewInfo)
+        if (viewInfo.type === 'rich-text') {
+          useEmitt().emitter.emit('calcData-' + viewId, viewInfo)
+        }
       } catch (e) {
         console.warn('themeAttrChange-error')
       }
@@ -97,8 +109,8 @@ onMounted(() => {
               <el-form-item class="form-item form-item-dark" label="W">
                 <el-input-number
                   effect="dark"
-                  size="middle"
-                  :min="600"
+                  size="small"
+                  :min="100"
                   :max="50000"
                   v-model="canvasStyleData.width"
                   @change="onBaseChange"
@@ -110,8 +122,8 @@ onMounted(() => {
               <el-form-item class="form-item form-item-dark" label="H">
                 <el-input-number
                   effect="dark"
-                  size="middle"
-                  :min="600"
+                  size="small"
+                  :min="100"
                   :max="50000"
                   v-model="canvasStyleData.height"
                   @change="onBaseChange"
@@ -132,7 +144,7 @@ onMounted(() => {
                 </el-icon>
               </el-tooltip>
               <el-select
-                style="margin: 0 0 0 8px; flex: 1"
+                style="width: 139px; margin: 0 0 0 8px; flex: 1"
                 effect="dark"
                 v-model="canvasStyleData.screenAdaptor"
                 @change="onStyleChange"
@@ -170,6 +182,17 @@ onMounted(() => {
         name="overallSetting"
       >
         <overall-setting style="padding-bottom: 8px" themes="dark" />
+      </el-collapse-item>
+      <el-collapse-item
+        effect="dark"
+        :title="t('visualization.number_formatter')"
+        name="formatterItem"
+      >
+        <ValueFormatterSetting
+          :formatter-cfg="canvasStyleData.component.formatterItem"
+          themes="dark"
+          @onFormatterItemChange="onFormatterItemChange"
+        ></ValueFormatterSetting>
       </el-collapse-item>
       <el-collapse-item
         effect="dark"

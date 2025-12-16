@@ -103,6 +103,7 @@ const formQuotaConfirm = () => {
       const q = cloneDeep(unref(formQuota))
       fieldForm.params = [q]
       const i = state.quotaData.find(ele => ele.id === formQuota.id)
+
       if (i) {
         const str = mirror.value.state.doc.toString()
         const name2Auto = []
@@ -120,6 +121,7 @@ const formQuotaConfirm = () => {
         })
       } else {
         state.quotaData.push(q)
+        quotaDataList.push(q)
       }
       formQuotaClose()
     }
@@ -136,11 +138,11 @@ const setFieldForm = () => {
 
 const setNameIdTrans = (from, to, originName, name2Auto?: string[]) => {
   let name2Id = originName
-  const nameIdMap = [...state.dimensionData, ...state.quotaData].reduce((pre, next) => {
+  const nameIdMap = [...dimensionDataList, ...quotaDataList].reduce((pre, next) => {
     pre[next[from]] = next[to]
     return pre
   }, {})
-  const on = originName.match(/\[(.+?)\]/g)
+  const on = originName.match(/\[(.+?)\]/g) || []
   if (on) {
     on.forEach(itm => {
       const ele = itm.slice(1, -1)
@@ -235,10 +237,8 @@ watch(
         )
       )
     } else {
-      state.dimensionData = JSON.parse(JSON.stringify(dimensionDataList)).filter(
-        ele => ele.extField === 0
-      )
-      state.quotaData = JSON.parse(JSON.stringify(quotaDataList)).filter(ele => ele.extField === 0)
+      state.dimensionData = JSON.parse(JSON.stringify(dimensionDataList))
+      state.quotaData = JSON.parse(JSON.stringify(quotaDataList))
     }
   }
 )
@@ -268,19 +268,19 @@ defineExpose({
   fieldForm,
   formField
 })
-const parmasTitle = ref('')
-const addParmasToQuota = () => {
+const paramsTitle = ref('')
+const addParamsToQuota = () => {
   if (disableCaParams.value) return
-  parmasTitle.value = t('data_set.add_calculation_parameters')
+  paramsTitle.value = t('data_set.add_calculation_parameters')
   if (!fieldForm.params) {
     fieldForm.params = []
   }
   dialogFormVisible.value = true
 }
 
-const updateParmasToQuota = () => {
+const updateParamsToQuota = () => {
   const [o] = fieldForm.params
-  parmasTitle.value = t('data_set.edit_calculation_parameters')
+  paramsTitle.value = t('data_set.edit_calculation_parameters')
   Object.assign(formQuota, o || {})
   dialogFormVisible.value = true
 }
@@ -289,7 +289,7 @@ const disableCaParams = computed(() => {
   return !!fieldForm.params?.length
 })
 
-const delParmasToQuota = () => {
+const delParamsToQuota = () => {
   const [o] = fieldForm.params
   fieldForm.params = []
   const str = mirror.value.state.doc.toString()
@@ -481,7 +481,7 @@ initFunction()
               "
               placement="top"
             >
-              <el-icon class="hover-icon_quota" @click="addParmasToQuota">
+              <el-icon class="hover-icon_quota" @click="addParamsToQuota">
                 <Icon
                   :class="[`field-icon-${fieldType[0]}`, disableCaParams && 'not-allow']"
                   style="color: #646a73"
@@ -516,10 +516,10 @@ initFunction()
                   </el-icon>
                   <span class="ellipsis" :title="item.name">{{ item.name }}</span>
                   <div v-if="!item.groupType" class="icon-right">
-                    <el-icon @click.stop="updateParmasToQuota" class="hover-icon">
+                    <el-icon @click.stop="updateParamsToQuota" class="hover-icon">
                       <Icon name="icon_edit_outlined"><icon_edit_outlined class="svg-icon" /></Icon>
                     </el-icon>
-                    <el-icon @click.stop="delParmasToQuota" class="hover-icon">
+                    <el-icon @click.stop="delParamsToQuota" class="hover-icon">
                       <Icon name="icon_delete-trash_outlined"
                         ><icon_deleteTrash_outlined class="svg-icon"
                       /></Icon>
@@ -652,10 +652,8 @@ initFunction()
   .mr0 {
     margin-right: 0;
 
-    :deep(.ed-select__prefix--light) {
-      padding: 0;
-      border: none;
-      margin: 0;
+    :deep(.ed-select__prefix::after) {
+      display: none;
     }
   }
 

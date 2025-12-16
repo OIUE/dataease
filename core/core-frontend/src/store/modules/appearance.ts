@@ -26,6 +26,7 @@ interface AppearanceState {
   showAbout?: string
   bg?: string
   login?: string
+  showSlogan?: string
   slogan?: string
   web?: string
   name?: string
@@ -54,6 +55,7 @@ export const useAppearanceStore = defineStore('appearanceStore', {
       showAbout: '0',
       bg: '',
       login: '',
+      showSlogan: 'true',
       slogan: '',
       web: '',
       name: '',
@@ -109,6 +111,9 @@ export const useAppearanceStore = defineStore('appearanceStore', {
       }
       return null
     },
+    getShowSlogan(): string {
+      return this.showSlogan
+    },
     getSlogan(): string {
       return this.slogan
     },
@@ -141,9 +146,6 @@ export const useAppearanceStore = defineStore('appearanceStore', {
     },
     getShowAi(): boolean {
       return isBtnShow(this.showAi)
-    },
-    getShowCopilot(): boolean {
-      return isBtnShow(this.showCopilot)
     },
     getShowDoc(): boolean {
       return isBtnShow(this.showDoc)
@@ -318,6 +320,7 @@ export const useAppearanceStore = defineStore('appearanceStore', {
       }
       this.bg = data.bg
       this.login = data.login
+      this.showSlogan = data.showSlogan
       this.slogan = data.slogan
       this.web = data.web
       this.name = data.name

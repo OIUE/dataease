@@ -4,12 +4,13 @@ import aboutBg from '@/assets/img/about-bg.png'
 import { ref, reactive, onMounted } from 'vue'
 import { useUserStoreWithOut } from '@/store/modules/user'
 import { F2CLicense } from './index'
-import { validateApi, buildVersionApi, updateInfoApi } from '@/api/about'
-import { ElMessage } from 'element-plus-secondary'
+import { validateApi, buildVersionApi, updateInfoApi, revertApi } from '@/api/about'
+import { ElMessage, ElMessageBox } from 'element-plus-secondary'
 import { useI18n } from '@/hooks/web/useI18n'
 import { useEmitt } from '@/hooks/web/useEmitt'
 import { useCache } from '@/hooks/web/useCache'
-
+import { logoutApi } from '@/api/login'
+import { logoutHandler } from '@/utils/logout'
 const dialogVisible = ref(false)
 const { wsCache } = useCache('localStorage')
 const { t } = useI18n()
@@ -58,7 +59,29 @@ const support = () => {
   const openType = wsCache.get('open-backend') === '1' ? '_self' : '_blank'
   window.open(url, openType)
 }
-
+const back2Community = () => {
+  ElMessageBox.confirm(t('about.confirm_tips'), {
+    confirmButtonType: 'danger',
+    type: 'warning',
+    confirmButtonText: t('common.sure'),
+    cancelButtonText: t('dataset.cancel'),
+    autofocus: false,
+    showClose: false
+  })
+    .then(() => {
+      revertApi().then(() => {
+        ElMessage.success(t('about.update_success'))
+        logout()
+      })
+    })
+    .catch(e => {
+      console.error(e)
+    })
+}
+const logout = async () => {
+  await logoutApi()
+  logoutHandler()
+}
 const getLicenseInfo = () => {
   validateHandler({}, res => {
     const info = getLicense(res.data)
@@ -203,6 +226,9 @@ const update = (licKey: string) => {
           <el-button plain> {{ $t('about.update_license') }} </el-button>
         </el-upload>
         <el-button plain @click="support"> {{ $t('about.support') }} </el-button>
+        <el-button v-if="license.status === 'expired'" plain @click="back2Community">
+          {{ $t('about.back_community') }}
+        </el-button>
       </div>
     </div>
   </el-dialog>

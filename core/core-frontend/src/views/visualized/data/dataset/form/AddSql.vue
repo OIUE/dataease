@@ -24,7 +24,9 @@ import {
   onBeforeUnmount,
   shallowRef,
   computed,
-  h
+  inject,
+  h,
+  Ref
 } from 'vue'
 import { debounce } from 'lodash-es'
 import { useI18n } from '@/hooks/web/useI18n'
@@ -82,7 +84,7 @@ const dsLoading = ref(false)
 const loading = ref(false)
 const LeftWidth = ref(240)
 const showLeft = ref(true)
-const editerName = ref()
+const editorName = ref()
 const state = reactive({
   plxTableData: [],
   variables: [],
@@ -100,7 +102,7 @@ const state = reactive({
 })
 
 const datasourceTableData = shallowRef([])
-
+const isCross = inject<Ref>('isCross')
 const paginationConfig = reactive({
   currentPage: 1,
   pageSize: 10,
@@ -243,8 +245,10 @@ onMounted(async () => {
       }
     }
   }
-  sql = Base64.decode(sqlNode.value.sql)
-  codeCom.value = myCm.value.codeComInit(setNameIdTrans('id', 'name', sql), true)
+  codeCom.value = myCm.value.codeComInit(
+    setNameIdTrans('id', 'name', Base64.decode(sqlNode.value.sql)),
+    true
+  )
 })
 
 onBeforeUnmount(() => {
@@ -260,7 +264,13 @@ const getNodeField = ({ datasourceId, tableName }) => {
     table: tableName,
     sql: ''
   }
-  getTableField({ datasourceId, info: JSON.stringify(info), tableName, type: 'db' })
+  getTableField({
+    datasourceId,
+    info: JSON.stringify(info),
+    tableName,
+    type: 'db',
+    isCross: isCross.value
+  })
     .then(res => {
       gridData.value = res as unknown as Field[]
     })
@@ -356,7 +366,7 @@ const setFlag = () => {
 }
 let sql = ''
 
-const save = (cb?: () => void) => {
+const save = () => {
   if (!sqlNode.value.tableName.trim()) {
     ElMessage.error(t('data_set.cannot_be_empty'))
     return
@@ -377,10 +387,11 @@ const save = (cb?: () => void) => {
       sql: Base64.encode(sql),
       sqlVariableDetails: JSON.stringify(state.variables)
     },
-    cb
+    () => {
+      ElMessage.success(t('common.save_success'))
+    }
   )
   changeFlag = false
-  ElMessage.success(t('common.save_success'))
 }
 
 const close = () => {
@@ -395,6 +406,7 @@ const close = () => {
 
 const handleClose = () => {
   let sqlNew = setNameIdTrans('name', 'id', codeCom.value.state.doc.toString())
+
   if (changeFlag || sql !== sqlNew || !sqlNew.trim()) {
     ElMessageBox.confirm(t('chart.tips'), {
       confirmButtonType: 'primary',
@@ -418,7 +430,8 @@ const getSQLPreview = () => {
   parseVariable()
   dataPreviewLoading.value = true
   getPreviewSql({
-    sql: Base64.encode((sql = setNameIdTrans('name', 'id', codeCom.value.state.doc.toString()))),
+    isCross: isCross.value,
+    sql: Base64.encode(setNameIdTrans('name', 'id', codeCom.value.state.doc.toString())),
     datasourceId: sqlNode.value.datasourceId,
     sqlVariableDetails: JSON.stringify(state.variables)
   })
@@ -497,37 +510,77 @@ const mouseupDrag = () => {
 
 const parseVariable = () => {
   state.variablesTmp = []
-  const reg = new RegExp('\\${(.*?)}', 'gim')
-  const match = codeCom.value.state.doc.toString().match(reg)
-  const names = []
-  if (match !== null) {
-    for (let index = 0; index < match.length; index++) {
-      let name = match[index].substring(2, match[index].length - 1)
-      if (names.indexOf(name) < 0) {
-        names.push(name)
-        // eslint-disable-next-line
-        let obj = undefined
-        for (let i = 0; i < state.variables?.length; i++) {
-          if (state.variables[i].variableName === name) {
-            obj = state.variables[i]
-            if (!obj.hasOwnProperty('defaultValueScope')) {
-              obj.defaultValueScope = 'EDIT'
+  const variableReg = new RegExp('\\$DE_PARAM{(.*?)}', 'gim')
+  const variableMatch = codeCom.value.state.doc.toString().match(variableReg)
+  if (variableMatch !== null) {
+    const names = []
+    const reg = new RegExp('\\$\\[[^\\]]+\\]', 'gim')
+    for (let index = 0; index < variableMatch.length; index++) {
+      let sqlItem = variableMatch[index].substring(10, variableMatch[index].length - 1)
+      const match = sqlItem.match(reg)
+      if (match !== null) {
+        for (let matchIndex = 0; matchIndex < match.length; matchIndex++) {
+          let name = match[matchIndex].substring(2, match[matchIndex].length - 1)
+          if (names.indexOf(name) < 0) {
+            names.push(name)
+            let obj = undefined
+            for (let i = 0; i < state.variables?.length; i++) {
+              if (state.variables[i].variableName === name) {
+                obj = state.variables[i]
+                if (!obj.hasOwnProperty('defaultValueScope')) {
+                  obj.defaultValueScope = 'EDIT'
+                }
+              }
+            }
+            if (obj === undefined) {
+              obj = {
+                variableName: name,
+                alias: '',
+                type: [],
+                required: false,
+                defaultValue: '',
+                details: '',
+                defaultValueScope: 'EDIT'
+              }
+              obj.type.push('TEXT')
+            }
+            state.variablesTmp.push(obj)
+          }
+        }
+      }
+    }
+  } else {
+    const reg = new RegExp('\\${(.*?)}', 'gim')
+    const match = codeCom.value.state.doc.toString().match(reg)
+    const names = []
+    if (match !== null) {
+      for (let index = 0; index < match.length; index++) {
+        let name = match[index].substring(2, match[index].length - 1)
+        if (names.indexOf(name) < 0) {
+          names.push(name)
+          let obj = undefined
+          for (let i = 0; i < state.variables?.length; i++) {
+            if (state.variables[i].variableName === name) {
+              obj = state.variables[i]
+              if (!obj.hasOwnProperty('defaultValueScope')) {
+                obj.defaultValueScope = 'EDIT'
+              }
             }
           }
-        }
-        if (obj === undefined) {
-          obj = {
-            variableName: name,
-            alias: '',
-            type: [],
-            required: false,
-            defaultValue: '',
-            details: '',
-            defaultValueScope: 'EDIT'
+          if (obj === undefined) {
+            obj = {
+              variableName: name,
+              alias: '',
+              type: [],
+              required: false,
+              defaultValue: '',
+              details: '',
+              defaultValueScope: 'EDIT'
+            }
+            obj.type.push('TEXT')
           }
-          obj.type.push('TEXT')
+          state.variablesTmp.push(obj)
         }
-        state.variablesTmp.push(obj)
       }
     }
   }
@@ -547,7 +600,7 @@ const mousedownDrag = () => {
 
 <template>
   <div class="add-sql-name">
-    <el-input class="name" ref="editerName" v-model="sqlNode.tableName" @change="setFlag" />
+    <el-input class="name" ref="editorName" v-model="sqlNode.tableName" @change="setFlag" />
     <div class="save-or-cancel flex-align-center">
       <el-button @click="getSQLPreview" text style="color: #1f2329">
         <template #icon>
@@ -573,7 +626,7 @@ const mousedownDrag = () => {
         </template>
         {{ t('auth.sysParams') }}
       </el-button>
-      <el-button :disabled="!changeFlagCode" @click="save(() => {})" type="primary">
+      <el-button :disabled="!changeFlagCode" @click="save" type="primary">
         {{ t('data_set.save') }}</el-button
       >
       <el-divider direction="vertical" />
@@ -950,7 +1003,7 @@ const mousedownDrag = () => {
   <el-drawer
     :title="dialogTitle"
     v-model="showVariableMgm"
-    custom-class="sql-dataset-drawer"
+    modal-class="sql-dataset-drawer"
     size="870px"
     direction="rtl"
   >
@@ -1506,13 +1559,13 @@ const mousedownDrag = () => {
       }
 
       &:focus {
-        background: #3370ff1a;
-        color: #3370ff;
+        background: var(--ed-color-primary-1a, #3370ff1a);
+        color: var(--ed-color-primary, #3370ff);
       }
 
       &:focus:hover {
-        color: #3370ff;
-        background: #3370ff33;
+        color: var(--ed-color-primary, #3370ff);
+        background: var(--ed-color-primary-33, #3370ff33);
       }
     }
   }
@@ -1602,6 +1655,7 @@ const mousedownDrag = () => {
   }
   .ed-input-group__prepend {
     padding: 0 11px;
+    width: 163px;
   }
   .de-group__prepend {
     .ed-date-editor {
@@ -1616,7 +1670,6 @@ const mousedownDrag = () => {
 
   .ed-date-editor {
     width: 100%;
-    display: inline-block;
   }
 
   .select-type {
@@ -1628,15 +1681,16 @@ const mousedownDrag = () => {
   .select-svg-icon {
     position: absolute;
     left: 24px;
-    top: 15px;
+    top: 19px;
   }
 
   .content {
-    height: 62px;
+    height: 80px;
     width: 822px;
     border-radius: 4px;
-    background: #e1eaff;
+    background: var(--ed-color-primary-1a, rgba(51, 112, 255, 0.1));
     position: relative;
+    line-height: 22px;
     padding: 9px 0 9px 40px;
     font-family: var(--de-custom_font, 'PingFang');
     font-size: 14px;

@@ -9,10 +9,16 @@ import {
   computed,
   inject,
   Ref,
+  onBeforeMount,
   shallowRef
 } from 'vue'
+import { useEmitt } from '@/hooks/web/useEmitt'
 import { cloneDeep, debounce } from 'lodash-es'
 import { getFieldTree } from '@/api/dataset'
+import colorFunctions from 'less/lib/less/functions/color.js'
+import colorTree from 'less/lib/less/tree/color.js'
+import { colorStringToHex } from '@/utils/color'
+
 interface SelectConfig {
   selectValue: any
   defaultMapValue: any
@@ -35,6 +41,8 @@ interface SelectConfig {
   multiple: boolean
 }
 
+const customStyle: any = inject('$custom-style-filter')
+const cascadeList = inject('cascade-list', Function, true)
 const props = defineProps({
   config: {
     type: Object as PropType<SelectConfig>,
@@ -66,26 +74,28 @@ const placeholderText = computed(() => {
   return ' '
 })
 const { config } = toRefs(props)
-
+const fromTreeSelectConfirm = ref(false)
 const multiple = ref(false)
-
 const treeSelectConfirm = val => {
   treeValue.value = val
   handleValueChange()
 }
 
 const handleValueChange = () => {
+  fromTreeSelectConfirm.value = true
   const value = Array.isArray(treeValue.value) ? [...treeValue.value] : treeValue.value
   if (!props.isConfig) {
     config.value.selectValue = Array.isArray(treeValue.value)
       ? [...treeValue.value]
       : treeValue.value
     nextTick(() => {
+      fromTreeSelectConfirm.value = false
       isConfirmSearch(config.value.id)
     })
     return
   }
   config.value.defaultValue = value
+  fromTreeSelectConfirm.value = false
 }
 
 const changeFromId = ref(false)
@@ -99,11 +109,13 @@ watch(
     })
   }
 )
-
+let oldId
 watch(
   () => config.value.treeFieldList,
-  () => {
-    if (changeFromId.value) return
+  val => {
+    let idStr = val.map(ele => ele.id).join('-')
+    if (changeFromId.value || idStr === oldId) return
+    oldId = idStr
     treeValue.value = config.value.multiple ? [] : undefined
     config.value.defaultValue = config.value.multiple ? [] : undefined
     config.value.selectValue = config.value.multiple ? [] : undefined
@@ -125,10 +137,23 @@ const init = () => {
     treeValue.value = plus ? [] : undefined
   }
   nextTick(() => {
+    oldId = config.value.treeFieldList?.map(ele => ele.id).join('-')
     multiple.value = config.value.multiple
   })
   getTreeOption()
 }
+
+const tagWidth = computed(() => {
+  return Math.min(getCustomWidth() / 3, 50) + 'px'
+})
+
+const tagsWidth = computed(() => {
+  return getCustomWidth() - 40 + 'px'
+})
+
+const tagTextWidth = computed(() => {
+  return Math.min(getCustomWidth() / 3, 50) - 25 + 'px'
+})
 
 const showOrHide = ref(true)
 const queryConditionWidth = inject('com-width', Function, true)
@@ -144,6 +169,39 @@ onMounted(() => {
     init()
   }, 0)
 })
+
+watch(
+  () => config.value.defaultValue,
+  val => {
+    if (props.isConfig) return
+    if (config.value.multiple) {
+      treeValue.value = Array.isArray(val) ? [...val] : val
+    }
+    nextTick(() => {
+      multiple.value = config.value.multiple
+    })
+  }
+)
+
+watch(
+  () => config.value.selectValue,
+  val => {
+    if (props.isConfig || fromTreeSelectConfirm.value) return
+
+    if (config.value.multiple) {
+      treeValue.value = Array.isArray(val) ? [...val] : val
+    }
+
+    nextTick(() => {
+      multiple.value = config.value.multiple
+      if (!config.value.multiple) {
+        treeValue.value = Array.isArray(config.value.selectValue)
+          ? [...config.value.selectValue]
+          : config.value.selectValue
+      }
+    })
+  }
+)
 
 const showWholePath = ref(false)
 watch(
@@ -180,14 +238,64 @@ const dfs = arr => {
     return { ...ele, value: ele.id, label: ele.text, children }
   })
 }
-
+const cascade = computed(() => {
+  return cascadeList() || []
+})
 const loading = ref(false)
+
+const getCascadeFieldId = () => {
+  const filter = []
+  cascade.value.forEach(ele => {
+    let condition = null
+    ele.forEach(item => {
+      const [_, queryId, fieldId] = item.datasetId.split('--')
+      if (queryId === config.value.id && condition) {
+        if (item.fieldId) {
+          condition.fieldId = item.fieldId
+        }
+        filter.push(condition)
+      } else {
+        if (props.isConfig) {
+          if (!!item.selectValue?.length) {
+            condition = {
+              fieldId: fieldId,
+              operator: 'in',
+              value: [...item.selectValue]
+            }
+          }
+        } else {
+          if (!!item.currentSelectValue?.length) {
+            condition = {
+              fieldId: fieldId,
+              operator: 'in',
+              value: [...item.currentSelectValue]
+            }
+          }
+        }
+      }
+    })
+  })
+  return filter
+}
+const getOptionFromCascade = () => {
+  config.value.selectValue = config.value.multiple ? [] : undefined
+  treeValue.value = config.value.multiple ? [] : undefined
+  getTreeOption()
+}
+
+onBeforeMount(() => {
+  useEmitt({
+    name: `${config.value.id}-select`,
+    callback: getOptionFromCascade
+  })
+})
 
 const getTreeOption = debounce(() => {
   loading.value = true
   getFieldTree({
     fieldIds: props.config.treeFieldList.map(ele => ele.id),
-    resultMode: config.value.resultMode || 0
+    resultMode: config.value.resultMode || 0,
+    filter: getCascadeFieldId()
   })
     .then(res => {
       treeOptionList.value = dfs(res)
@@ -208,7 +316,7 @@ watch(
     }
   }
 )
-const fakeValue = ''
+const fakeValue = ref('')
 const treeValue = ref()
 const getCustomWidth = () => {
   if (placeholder?.value?.placeholderShow) {
@@ -221,6 +329,22 @@ const getCustomWidth = () => {
 }
 const selectStyle = computed(() => {
   return props.isConfig ? {} : { width: getCustomWidth() + 'px' }
+})
+
+const tagColor = computed(() => {
+  if (
+    !customStyle ||
+    ['#FFFFFF', 'rgba(255, 255, 255, 1)', 'rgb(255, 255, 255)'].includes(customStyle.background)
+  )
+    return ''
+  if (customStyle.background === '#131C42') return 'rgb(38, 53, 82)'
+  const hexColor = customStyle.background.startsWith('#')
+    ? customStyle.background
+    : colorStringToHex(customStyle.background)
+
+  return colorFunctions
+    .mix(new colorTree('ffffff'), new colorTree(hexColor.substr(1)), { value: 20 })
+    .toRGB()
 })
 </script>
 
@@ -240,6 +364,7 @@ const selectStyle = computed(() => {
     :filter-node-method="filterMethod"
     :showWholePath="showWholePath"
     collapse-tags-tooltip
+    :tagColor="tagColor"
     :key="'multipleTree' + getCustomWidth()"
     filterable
     :style="selectStyle"
@@ -275,5 +400,16 @@ const selectStyle = computed(() => {
 <style lang="less" scoped>
 :deep(.ed-select-tags-wrapper) {
   display: inline-flex !important;
+}
+
+:deep(.ed-select__tags) {
+  max-width: v-bind(tagsWidth) !important;
+  .ed-tag {
+    max-width: v-bind(tagWidth);
+  }
+
+  .ed-select__tags-text {
+    max-width: v-bind(tagTextWidth) !important;
+  }
 }
 </style>

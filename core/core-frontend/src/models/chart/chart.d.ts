@@ -33,6 +33,7 @@ declare interface Chart {
       tableRow: []
     }
     customCalc: any
+    customSumResult?: Record<string, any>
   }
   xAxis?: Axis[]
   xAxisExt?: Axis[]
@@ -114,6 +115,10 @@ declare interface BaseFormatter {
    * 千分符
    */
   thousandSeparator: boolean
+  /**
+   * 显示总出占比
+   */
+  showTotalPercent: boolean
 }
 
 /**

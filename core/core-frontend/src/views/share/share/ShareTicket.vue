@@ -90,7 +90,7 @@
         <el-table-column prop="args" :label="$t('dataset.param')" width="117">
           <template v-slot="scope">
             <el-tooltip class="box-item" effect="light" :content="scope.row.args" placement="top">
-              <span style="color: #3370ff">
+              <span class="svg-primary-color">
                 {{ getArgCount(scope.row) }}
               </span>
             </el-tooltip>
@@ -301,8 +301,7 @@ onMounted(() => {
 
 <style lang="less" scoped>
 .ticket {
-  height: auto;
-  max-height: 560px;
+  height: 100%;
   .ticket-model {
     display: flex;
     height: 22px;
@@ -378,12 +377,7 @@ onMounted(() => {
     }
   }
   .ticket-table {
-    min-height: 156px;
-    padding: 0 0;
-    height: 50px;
-    overflow-y: overlay;
-    position: relative;
-    height: calc(100% - 124px);
+    height: 400px;
 
     :deep(.ticket-exp-head) {
       display: flex;

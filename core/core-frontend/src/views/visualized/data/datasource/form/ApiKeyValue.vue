@@ -3,7 +3,7 @@ import icon_drag_outlined from '@/assets/svg/icon_drag_outlined.svg'
 import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
 import icon_add_outlined from '@/assets/svg/icon_add_outlined.svg'
 import { propTypes } from '@/utils/propTypes'
-import { computed, onBeforeMount, PropType, toRefs, inject, ref } from 'vue'
+import { computed, onBeforeMount, PropType, toRefs, inject } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { KeyValue } from './ApiTestModel.js'
 import draggable from 'vuedraggable'
@@ -111,6 +111,10 @@ const timeFunLists = [
   {
     label: t('data_source.that_day') + '（yyyy/MM/dd）',
     value: 'currentDay yyyy/MM/dd'
+  },
+  {
+    label: t('data_source.timestamp'),
+    value: 'currentTimestamp'
   }
 ]
 </script>
@@ -124,7 +128,7 @@ const timeFunLists = [
             <el-icon class="drag handle">
               <Icon name="icon_drag_outlined"><icon_drag_outlined class="svg-icon" /></Icon>
             </el-icon>
-            <el-col :span="activeName === 'params' ? 8 : 6" v-if="!unShowSelect">
+            <el-col :span="6" v-if="!unShowSelect">
               <el-input
                 v-if="!suggestions"
                 v-model="element.name"
@@ -143,7 +147,7 @@ const timeFunLists = [
                 show-word-limit
               />
             </el-col>
-            <el-col :span="3" v-if="activeName === 'table'">
+            <el-col :span="3">
               <el-select v-model="element.nameType" @change="changeNameType(element)">
                 <el-option
                   v-for="item in options"
@@ -164,17 +168,10 @@ const timeFunLists = [
               />
             </el-col>
 
-            <el-col :span="activeName === 'params' ? 7 : 6">
-              <el-input
-                v-if="!needMock && activeName === 'params'"
-                v-model="element.value"
-                :disabled="isReadOnly"
-                :placeholder="unShowSelect ? t('common.description') : valueText"
-                show-word-limit
-              />
+            <el-col :span="6">
               <el-select
                 v-model="element.value"
-                v-if="!needMock && activeName === 'table' && element.nameType === 'params'"
+                v-if="!needMock && element.nameType === 'params'"
                 style="width: 100%"
               >
                 <el-option
@@ -186,7 +183,7 @@ const timeFunLists = [
               </el-select>
               <el-select
                 v-model="element.value"
-                v-if="!needMock && activeName === 'table' && element.nameType === 'timeFun'"
+                v-if="!needMock && element.nameType === 'timeFun'"
                 style="width: 100%"
               >
                 <el-option
@@ -198,12 +195,7 @@ const timeFunLists = [
               </el-select>
 
               <el-input
-                v-if="
-                  !needMock &&
-                  activeName === 'table' &&
-                  element.nameType !== 'params' &&
-                  element.nameType !== 'timeFun'
-                "
+                v-if="!needMock && element.nameType !== 'params' && element.nameType !== 'timeFun'"
                 v-model="element.value"
                 :disabled="isReadOnly"
                 :placeholder="

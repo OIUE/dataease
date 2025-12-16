@@ -35,7 +35,7 @@ const state = reactive({
   axisForm: JSON.parse(JSON.stringify(DEFAULT_XAXIS_STYLE))
 })
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 const emit = defineEmits(['onChangeXAxisForm'])
 
@@ -522,7 +522,23 @@ onMounted(() => {
           @change="changeAxisStyle('axisLabel.rotate')"
         />
       </el-form-item>
-
+      <el-form-item
+        class="form-item"
+        :class="'form-item-' + themes"
+        :label="t('chart.length_limit')"
+        v-if="showProperty('showLengthLimit')"
+      >
+        <el-input-number
+          :disabled="!state.axisForm.axisLabel.show"
+          style="width: 100%"
+          :effect="props.themes"
+          v-model="state.axisForm.axisLabel.lengthLimit"
+          :min="1"
+          size="small"
+          controls-position="right"
+          @change="changeAxisStyle('axisLabel.lengthLimit')"
+        />
+      </el-form-item>
       <el-form-item
         class="form-item"
         :class="'form-item-' + themes"
@@ -619,7 +635,7 @@ onMounted(() => {
                   v-model="state.axisForm.axisLabelFormatter.unit"
                   :placeholder="t('chart.pls_select_field')"
                   size="small"
-                  @change="changeAxisStyle('axisLabelFormatter.unit')"
+                  @change="changeAxisStyle('axisLabelFormatter')"
                 >
                   <el-option
                     v-for="item in getUnitTypeList(state.axisForm.axisLabelFormatter.unitLanguage)"

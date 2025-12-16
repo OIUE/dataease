@@ -1,5 +1,5 @@
 <template>
-  <div :id="containerId" class="table-container"></div>
+  <div :id="containerId" class="table-container" :class="{ dark: themes === 'dark' }"></div>
   <div class="button-group">
     <el-button :effect="themes" @click="onCancelConfig">{{ t('chart.cancel') }}</el-button>
     <el-button type="primary" @click="onConfigChange">{{ t('chart.confirm') }}</el-button>
@@ -19,7 +19,8 @@ import {
   TableSheet,
   TooltipShowOptions,
   ColCell,
-  Node
+  Node,
+  LayoutResult
 } from '@antv/s2'
 import { ElMessageBox } from 'element-plus-secondary'
 import { cloneDeep, debounce, isEqual, isNumber } from 'lodash-es'
@@ -51,22 +52,27 @@ const emits = defineEmits(['onConfigChange', 'onCancelConfig'])
 const onCancelConfig = () => {
   emits('onCancelConfig')
 }
-
+const allAxis = computed(() => {
+  const axis = [...props.chart.xAxis]
+  if (props.chart.type === 'table-normal') {
+    axis.push(...props.chart.yAxis)
+  }
+  return axis
+})
 const onConfigChange = () => {
-  const allAxis = props.chart.xAxis
+  const showAxis = allAxis.value
     ?.map(axis => axis.hide !== true && axis.dataeaseName)
     .filter(i => i)
   const { fields, meta } = s2.dataCfg
-  const groupMeta = meta.filter(item => !allAxis.includes(item.field))
+  const groupMeta = meta.filter(item => !showAxis.includes(item.field))
   emits('onConfigChange', { columns: fields.columns, meta: groupMeta })
 }
 
 const init = () => {
   const chart = cloneDeep(props.chart)
-  const xAxis = chart.xAxis
   const { headerGroupConfig } = chart.customAttr.tableHeader
   const showColumns = []
-  xAxis?.forEach(axis => {
+  allAxis.value?.forEach(axis => {
     axis.hide !== true && showColumns.push({ key: axis.dataeaseName })
   })
   if (!showColumns.length) {
@@ -108,7 +114,7 @@ const renderTable = (chart: ChartObj) => {
   const { headerGroupConfig } = chart.customAttr.tableHeader
   const meta = [...headerGroupConfig.meta]
   const columns = headerGroupConfig.columns
-  const axisMap = chart.xAxis.reduce((pre, cur) => {
+  const axisMap = allAxis.value.reduce((pre, cur) => {
     pre[cur.dataeaseName] = cur
     return pre
   }, {})
@@ -140,7 +146,7 @@ const renderTable = (chart: ChartObj) => {
       })
     })
   } else {
-    chart.xAxis?.forEach(axis => {
+    allAxis.value?.forEach(axis => {
       if (axis.hide !== true) {
         meta.push({
           field: axis.dataeaseName,
@@ -162,6 +168,20 @@ const renderTable = (chart: ChartObj) => {
     width: containerDom.getBoundingClientRect().width,
     height: containerDom.offsetHeight,
     tooltip: {
+      autoAdjustBoundary: null,
+      adjustPosition(positionInfo) {
+        const {
+          position: { x, y }
+        } = positionInfo
+        const scrollWidth = containerDom.scrollLeft
+        const groupMenuContainer = document.getElementById(menuGroupId.value)
+        const menuWidth = groupMenuContainer?.offsetWidth || 120
+        const containerWidth = containerDom.offsetWidth
+        if (x - scrollWidth + menuWidth > containerWidth) {
+          return { x: x - menuWidth, y: y + 10 }
+        }
+        return { x: x, y: y + 10 }
+      },
       getContainer: () => containerDom,
       renderTooltip: sheet => new GroupMenu(sheet),
       style: {
@@ -170,7 +190,12 @@ const renderTable = (chart: ChartObj) => {
       }
     },
     interaction: {
-      rangeSelection: false
+      rangeSelection: false,
+      resize: {
+        colCellHorizontal: false,
+        colCellVertical: false,
+        rowCellVertical: false
+      }
     }
   }
   s2 = new TableSheet(containerDom, s2DataConfig, s2Options)
@@ -295,9 +320,9 @@ const renderTable = (chart: ChartObj) => {
           inputPlaceholder: t('chart.group_name_edit_tip'),
           inputValue: cellMeta.name,
           inputErrorMessage: t('chart.group_name_error_tip'),
-          // 正则校验，长度 1-20
+          // 正则校验，长度 1-50
           inputValidator: val => {
-            if (val?.length < 1 || val?.length > 20) {
+            if (val?.length < 1 || val?.length > 50) {
               return t('chart.group_name_error_tip')
             }
             return true
@@ -326,7 +351,7 @@ const renderTable = (chart: ChartObj) => {
     //如果有多个cell都在同一个层级，并且parent相同，那就是可以进行合并分组操作
     if (activeColumns?.length > 1) {
       const sameParent = activeCells.every(
-        cell => cell.getMeta().parent === curCell.getMeta().parent
+        cell => cell.getMeta().parent.id === curCell.getMeta().parent.id
       )
       if (!sameParent) {
         return
@@ -387,9 +412,9 @@ const renderTable = (chart: ChartObj) => {
           inputPlaceholder: t('chart.group_name_edit_tip'),
           inputErrorMessage: t('chart.group_name_error_tip'),
           inputValue: t('chart.group'),
-          // 正则校验，长度 1-20
+          // 正则校验，长度 1-50
           inputValidator: val => {
-            if (val?.length < 1 || val?.length > 20) {
+            if (val?.length < 1 || val?.length > 50) {
               return t('chart.group_name_error_tip')
             }
             return true
@@ -484,6 +509,21 @@ const renderTable = (chart: ChartObj) => {
       })
     }
   })
+  s2.once(S2Event.LAYOUT_AFTER_HEADER_LAYOUT, (e: LayoutResult) => {
+    const initialized = s2.store.get('initialized')
+    if (!initialized) {
+      s2.store.set('initialized', true)
+      s2.changeSheetSize(e.colsHierarchy.width)
+      const length = s2.dataCfg.data?.length || 0
+      const headerHeight = e.colsHierarchy.height
+      const rowHeight = s2.options.style.cellCfg.height
+      const totalHeight = headerHeight + rowHeight * length
+      if (containerDom.offsetHeight > totalHeight) {
+        containerDom.style.height = totalHeight + 'px'
+      }
+      s2.render(false)
+    }
+  })
   s2.render()
 }
 
@@ -527,9 +567,14 @@ const getTreesMaxDepth = (nodes: Array<ColumnNode>): number => {
   return Math.max(...rootDepths)
 }
 
-const resize = debounce((width, height) => {
+const resize = debounce(height => {
   if (s2) {
-    s2.changeSheetSize(width, height)
+    const tableHeight = s2.container.cfg.height
+    if (height > tableHeight) {
+      const dom = document.getElementById(containerId.value)
+      dom.style.height = tableHeight + 'px'
+    }
+    s2.changeSheetSize(undefined, height)
     s2.render(false)
   }
 }, 500)
@@ -545,14 +590,13 @@ onMounted(() => {
       preSize[0] = size.inlineSize
       preSize[1] = size.blockSize
     }
-    const widthOffset = Math.abs(size.inlineSize - preSize[0])
     const heightOffset = Math.abs(size.blockSize - preSize[1])
-    if (widthOffset < TOLERANCE && heightOffset < TOLERANCE) {
+    if (heightOffset < TOLERANCE) {
       return
     }
     preSize[0] = size.inlineSize
     preSize[1] = size.blockSize
-    resize(size.inlineSize, Math.round(size.blockSize))
+    resize(Math.round(size.blockSize))
   })
   resizeObserver.observe(document.getElementById(containerId.value))
 })
@@ -577,6 +621,11 @@ class GroupMenu extends BaseTooltip {
   position: relative;
   width: 100%;
   height: 40vh;
+  overflow-x: auto;
+  overflow-y: hidden;
+  &.dark {
+    scrollbar-color: #3a3a3a #1a1a1a;
+  }
 }
 
 .group-menu {
@@ -589,6 +638,7 @@ class GroupMenu extends BaseTooltip {
   :deep(span) {
     cursor: pointer;
     padding: 5px 10px;
+    word-break: keep-all;
     &:hover {
       background-color: var(--ed-fill-color-light);
     }
@@ -597,5 +647,6 @@ class GroupMenu extends BaseTooltip {
 .button-group {
   display: flex;
   justify-content: end;
+  margin-top: 4vh;
 }
 </style>

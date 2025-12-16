@@ -48,7 +48,7 @@ const props = defineProps({
 })
 const dvMainStore = dvMainStoreWithOut()
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 const { batchOptStatus } = storeToRefs(dvMainStore)
 watch(
@@ -502,6 +502,7 @@ const isProgressBar = computed(() => {
     :disabled="!state.labelForm.show"
     :model="state.labelForm"
     label-position="top"
+    size="small"
   >
     <el-row v-show="showEmpty" style="margin-bottom: 12px">
       {{ t('chart.no_other_configurable_properties') }}</el-row
@@ -789,7 +790,7 @@ const isProgressBar = computed(() => {
                 :effect="themes"
                 v-model="state.labelForm.labelFormatter.unit"
                 :placeholder="$t('chart.pls_select_field')"
-                @change="changeLabelAttr('labelFormatter.unit')"
+                @change="changeLabelAttr('labelFormatter')"
               >
                 <el-option
                   v-for="item in getUnitTypeList(state.labelForm.labelFormatter.unitLanguage)"
@@ -946,7 +947,7 @@ const isProgressBar = computed(() => {
                   :effect="themes"
                   v-model="state.labelForm.totalFormatter.unit"
                   :placeholder="$t('chart.pls_select_field')"
-                  @change="changeLabelAttr('totalFormatter.unit')"
+                  @change="changeLabelAttr('totalFormatter')"
                 >
                   <el-option
                     v-for="item in getUnitTypeList(state.labelForm.totalFormatter.unitLanguage)"
@@ -1109,7 +1110,7 @@ const isProgressBar = computed(() => {
                   v-model="state.labelForm.quotaLabelFormatter.unit"
                   :placeholder="t('chart.pls_select_field')"
                   size="small"
-                  @change="changeLabelAttr('quotaLabelFormatter.unit')"
+                  @change="changeLabelAttr('quotaLabelFormatter')"
                 >
                   <el-option
                     v-for="item in getUnitTypeList(
@@ -1639,7 +1640,7 @@ const isProgressBar = computed(() => {
                   :effect="themes"
                   v-model="state.labelForm.labelFormatter.unit"
                   :placeholder="$t('chart.pls_select_field')"
-                  @change="changeLabelAttr('labelFormatter.unit')"
+                  @change="changeLabelAttr('labelFormatter')"
                 >
                   <el-option
                     v-for="item in getUnitTypeList(state.labelForm.labelFormatter.unitLanguage)"
@@ -1897,7 +1898,7 @@ const isProgressBar = computed(() => {
                   :effect="themes"
                   v-model="state.labelForm.labelFormatter.unit"
                   :placeholder="$t('chart.pls_select_field')"
-                  @change="changeLabelAttr('labelFormatter.unit')"
+                  @change="changeLabelAttr('labelFormatter')"
                 >
                   <el-option
                     v-for="item in getUnitTypeList(state.labelForm.labelFormatter.unitLanguage)"
@@ -2024,9 +2025,8 @@ const isProgressBar = computed(() => {
 }
 
 .series-select {
-  :deep(.ed-select__prefix--light) {
-    padding-right: unset;
-    border-right: unset;
+  :deep(.ed-select__prefix::after) {
+    display: none;
   }
 
   :deep(.ed-select__prefix--dark) {

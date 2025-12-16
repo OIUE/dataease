@@ -13,7 +13,7 @@ import { useRequestStoreWithOut } from '@/store/modules/request'
 import { interactiveStoreWithOut } from '@/store/modules/interactive'
 import ShortcutTable from './ShortcutTable.vue'
 import { useUserStoreWithOut } from '@/store/modules/user'
-import { useRouter } from 'vue-router'
+import { useRouter } from 'vue-router_2'
 import { searchMarketRecommend } from '@/api/templateMarket'
 import TemplateBranchItem from '@/views/workbranch/TemplateBranchItem.vue'
 import { ElMessage } from 'element-plus-secondary'
@@ -311,7 +311,9 @@ loadShareBase()
         </el-icon>
         <div class="info">
           <div class="name-role flex-align-center">
-            <span class="name">{{ userStore.getName }}</span>
+            <span :title="userStore.getName" style="max-width: 200px" class="name ellipsis">{{
+              userStore.getName
+            }}</span>
             <span class="role main-btn" />
           </div>
           <span v-if="userStore.getUid" class="id"> {{ `ID: ${userStore.getUid}` }} </span>
@@ -345,7 +347,7 @@ loadShareBase()
               v-if="!ele['menuAuth'] || !ele['anyManage']"
               class="box-item"
               effect="dark"
-              :content="t('work_branch.template_market_official')"
+              :content="t('work_branch.permission_to_create')"
               placement="top"
             >
               <div class="empty-tooltip-container" />
@@ -430,7 +432,7 @@ loadShareBase()
             </div>
           </el-row>
           <el-row v-show="!state.networkStatus" class="template-empty">
-            {{ t('visualization.market_network_tips') }}
+            {{ t('visualization.market_network_tips', [state.baseUrl]) }}
           </el-row>
         </template>
       </div>

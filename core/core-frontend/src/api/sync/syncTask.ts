@@ -111,6 +111,10 @@ export interface ITarget {
   incrementSync: string
   incrementField: string
   incrementFieldType: string
+  remarks: string
+  faultToleranceRate: number
+  incrementOffset: number
+  incrementOffsetUnit: string
 }
 
 export class ITaskInfoRes {

@@ -6,6 +6,7 @@ import type { Bar, BarOptions } from '@antv/g2plot/esm/plots/bar'
 import {
   configAxisLabelLengthLimit,
   configPlotTooltipEvent,
+  configRoundAngle,
   getPadding,
   getTooltipContainer,
   setGradientColor,
@@ -22,6 +23,7 @@ import {
 import { Datum } from '@antv/g2plot/esm/types/common'
 import { useI18n } from '@/hooks/web/useI18n'
 import { DEFAULT_BASIC_STYLE } from '@/views/chart/components/editor/util/chart'
+import { Group } from '@antv/g-canvas'
 
 const { t } = useI18n()
 const DEFAULT_DATA = []
@@ -170,6 +172,17 @@ export class RangeBar extends G2PlotChartView<BarOptions, Bar> {
     const newChart = new BarClass(container, options)
 
     newChart.on('interval:click', action)
+    if (options.label) {
+      newChart.on('label:click', e => {
+        action({
+          x: e.x,
+          y: e.y,
+          data: {
+            data: e.target.attrs.data
+          }
+        })
+      })
+    }
     configPlotTooltipEvent(chart, newChart)
     configAxisLabelLengthLimit(chart, newChart)
     return newChart
@@ -309,19 +322,10 @@ export class RangeBar extends G2PlotChartView<BarOptions, Bar> {
         }
       }
     }
-    if (basicStyle.radiusColumnBar === 'roundAngle') {
-      const barStyle = {
-        radius: [
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius
-        ]
-      }
-      options = {
-        ...options,
-        barStyle
-      }
+
+    options = {
+      ...options,
+      ...configRoundAngle(chart, 'barStyle')
     }
     let barWidthRatio
     const _v = basicStyle.columnWidthRatio ?? DEFAULT_BASIC_STYLE.columnWidthRatio
@@ -391,7 +395,22 @@ export class RangeBar extends G2PlotChartView<BarOptions, Bar> {
               valueFormatter(param.values[1], labelAttr.labelFormatter)
           }
         }
-        return res
+        const group = new Group({})
+        group.addShape({
+          type: 'text',
+          attrs: {
+            x: 0,
+            y: 0,
+            data: param,
+            text: res,
+            textAlign: 'start',
+            textBaseline: 'top',
+            fontSize: labelAttr.fontSize,
+            fontFamily: chart.fontFamily,
+            fill: labelAttr.color
+          }
+        })
+        return group
       }
     }
     return {

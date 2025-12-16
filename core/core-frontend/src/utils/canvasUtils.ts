@@ -1,4 +1,4 @@
-import { cloneDeep, forEach } from 'lodash-es'
+import { cloneDeep } from 'lodash-es'
 import componentList, {
   ACTION_SELECTION,
   BASE_CAROUSEL,
@@ -32,19 +32,47 @@ import { deepCopy, nameTrim } from '@/utils/utils'
 import { ElMessage, ElMessageBox } from 'element-plus-secondary'
 import { guid } from '@/views/visualized/data/dataset/form/util'
 const dvMainStore = dvMainStoreWithOut()
-const { inMobile, dvInfo, canvasStyleData, componentData, canvasViewInfo, appData } =
-  storeToRefs(dvMainStore)
+const {
+  inMobile,
+  dvInfo: curDvInfo,
+  canvasStyleData,
+  componentData,
+  canvasViewInfo,
+  appData
+} = storeToRefs(dvMainStore)
 const snapshotStore = snapshotStoreWithOut()
 import { useI18n } from '@/hooks/web/useI18n'
 import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
 import { useCache } from '@/hooks/web/useCache'
 import { isDesktop } from '@/utils/ModelUtil'
+import { ShorthandMode } from '@/Types'
+import { formatterItem } from '@/views/chart/components/js/formatter'
 const { t } = useI18n()
 const appearanceStore = useAppearanceStoreWithOut()
 const { wsCache } = useCache()
 export function chartTransStr2Object(targetIn, copy) {
   const target = copy === 'Y' ? cloneDeep(targetIn) : targetIn
   return target
+}
+
+const getNewInnerPadding = (commonGap = 0) => {
+  return {
+    mode: ShorthandMode.Uniform,
+    top: commonGap,
+    right: commonGap,
+    bottom: commonGap,
+    left: commonGap
+  }
+}
+
+const getNewBorderRadius = (commonGap = 0) => {
+  return {
+    mode: ShorthandMode.Uniform,
+    topLeft: commonGap,
+    topRight: commonGap,
+    bottomLeft: commonGap,
+    bottomRight: commonGap
+  }
 }
 
 export function chartTransObject2Str(targetIn, copy) {
@@ -64,7 +92,7 @@ export function findNewComponent(componentName, innerType, staticMap?) {
   componentList.forEach(comp => {
     if (comp.component === componentName || comp.component === innerType) {
       newComponent = cloneDeep(comp)
-      if (newComponent.component === 'DeTabs') {
+      if (['DeTabs', 'DeScreen'].includes(newComponent.component)) {
         newComponent.propValue[0].name = guid()
         newComponent['titleBackground'] = deepCopy(COMMON_TAB_TITLE_BACKGROUND)
       }
@@ -90,6 +118,9 @@ export function findNewComponent(componentName, innerType, staticMap?) {
     if (newComponent.isPlugin) {
       newComponent.staticMap = staticMap
     }
+  } else if (['DeDecoration', 'DynamicBackground'].includes(componentName)) {
+    newComponent.style.borderWidth = 0
+    newComponent.style.innerPadding = getNewInnerPadding()
   }
   return newComponent
 }
@@ -111,6 +142,10 @@ export function commonHandleDragEnd(e, dvModel) {
   }
 }
 
+function isNumber(value) {
+  return !isNaN(value) && typeof value === 'number'
+}
+
 function matrixAdaptor(componentItem) {
   componentItem.x = 1 + (componentItem.x - 1) * 2
   componentItem.y = 1 + (componentItem.y - 1) * 2
@@ -126,7 +161,7 @@ function matrixAdaptor(componentItem) {
     })
   } else if (componentItem.component === 'DeTabs') {
     componentItem.propValue?.forEach(tabItem => {
-      tabItem.componentData.forEach(tabComponent => {
+      tabItem.componentData?.forEach(tabComponent => {
         matrixAdaptor(tabComponent)
       })
     })
@@ -153,12 +188,30 @@ export function historyItemAdaptor(
   ) {
     componentItem.propValue?.forEach((filterItem, index) => {
       if (reportFilterInfo[filterItem.id]) {
-        componentItem.propValue[index] = JSON.parse(reportFilterInfo[filterItem.id].filterInfo)
+        const mergeItem = JSON.parse(reportFilterInfo[filterItem.id].filterInfo)
+        if (mergeItem['defaultValueCheck']) {
+          mergeItem['defaultValueFirstItem'] = false
+        }
+        componentItem.propValue[index] = mergeItem
       }
     })
   }
 
+  // 历史innerPadding 转换
+  if (isNumber(componentItem['commonBackground'].innerPadding)) {
+    componentItem['commonBackground'].innerPadding = getNewInnerPadding(
+      componentItem['commonBackground'].innerPadding
+    )
+  }
+
+  // 历史borderRadius 转换
+  if (isNumber(componentItem['commonBackground'].borderRadius)) {
+    componentItem['commonBackground'].borderRadius = getNewBorderRadius(
+      componentItem['commonBackground'].borderRadius
+    )
+  }
   if (componentItem.component === 'DeTabs') {
+    componentItem['editableTabsValue'] = componentItem['editableTabsValue'] || ''
     componentItem.style['showTabTitle'] =
       componentItem.style['showTabTitle'] === undefined ? true : componentItem.style['showTabTitle']
   }
@@ -224,7 +277,7 @@ export function historyItemAdaptor(
     componentItem.style.fontWeight = componentItem.style.fontWeight || 'normal'
     componentItem.style.textDecoration = componentItem.style.textDecoration || 'none'
     componentItem.propValue?.forEach(tabItem => {
-      tabItem.componentData.forEach(tabComponent => {
+      tabItem.componentData?.forEach(tabComponent => {
         historyItemAdaptor(tabComponent, reportFilterInfo, attachInfo, canvasVersion, canvasInfo)
       })
     })
@@ -242,6 +295,12 @@ export function historyAdaptor(
   attachInfo,
   canvasVersion
 ) {
+  // 防止出现主画布canvasId 不一致情况
+  if (attachInfo?.resourceTable === 'snapshot') {
+    canvasDataResult.forEach(componentItem => {
+      componentItem.canvasId = 'canvas-main'
+    })
+  }
   const curVersion = wsCache.get('x-de-execute-version')
   // 含有定时报告过滤项每次都需要匹配
   const reportFilterInfo = canvasInfo?.reportFilterInfo
@@ -279,6 +338,12 @@ export function historyAdaptor(
     canvasStyleResult['popupButtonAvailable'] === undefined
       ? true
       : canvasStyleResult['popupButtonAvailable'] //兼容弹框区域按钮开关
+  canvasStyleResult['dialogBackgroundColor'] = canvasStyleResult['dialogBackgroundColor'] || '#fff'
+  canvasStyleResult['dialogButton'] = canvasStyleResult['dialogButton'] || '#020408'
+
+  canvasStyleResult['component']['formatterItem'] =
+    canvasStyleResult['component']['formatterItem'] || deepCopy(formatterItem)
+
   canvasDataResult.forEach(componentItem => {
     historyItemAdaptor(componentItem, reportFilterInfo, attachInfo, canvasVersion, canvasInfo)
   })
@@ -307,10 +372,14 @@ export function refreshOtherComponent(dvId, busiFlag) {
             componentData.value[i].propValue = canvasDataResultMap[component.id].propValue
           } else {
             const { top, left, height, width, fontSize } = componentData.value[i].style
+            const { linkageFilters, outerParamsFilters, webParamsFilters } = componentData.value[i]
             canvasDataResultMap[component.id].style.top = top
             canvasDataResultMap[component.id].style.left = left
             canvasDataResultMap[component.id].style.height = height
             canvasDataResultMap[component.id].style.width = width
+            canvasDataResultMap[component.id]['linkageFilters'] = linkageFilters
+            canvasDataResultMap[component.id]['outerParamsFilters'] = outerParamsFilters
+            canvasDataResultMap[component.id]['webParamsFilters'] = webParamsFilters
             if (fontSize) {
               canvasDataResultMap[component.id].style.fontSize = fontSize
             }
@@ -327,7 +396,7 @@ export function initCanvasDataPrepare(dvId, params, callBack) {
   const copyFlag = busiFlag != null && busiFlag.includes('-copy')
   const busiFlagCustom = copyFlag ? busiFlag.split('-')[0] : busiFlag
   const method = copyFlag ? findCopyResource : findById
-  let attachInfo = { source: 'main' }
+  let attachInfo = { source: params.source ? params.source : 'main' }
   if (dvMainStore.canvasAttachInfo && !!dvMainStore.canvasAttachInfo.taskId) {
     attachInfo = { source: 'report', taskId: dvMainStore.canvasAttachInfo.taskId }
     const showWatermarkExist =
@@ -344,7 +413,9 @@ export function initCanvasDataPrepare(dvId, params, callBack) {
     const canvasInfo = res.data
     const watermarkInfo = {
       ...canvasInfo.watermarkInfo,
-      settingContent: JSON.parse(canvasInfo.watermarkInfo.settingContent)
+      settingContent: canvasInfo.watermarkInfo?.settingContent
+        ? JSON.parse(canvasInfo.watermarkInfo.settingContent)
+        : {}
     }
 
     const dvInfo = {
@@ -388,18 +459,20 @@ export async function initCanvasData(dvId, params, callBack) {
     dvId,
     params,
     function ({ canvasDataResult, canvasStyleResult, dvInfo, canvasViewInfoPreview }) {
-      dvMainStore.setComponentData(canvasDataResult)
-      dvMainStore.setCanvasStyle(canvasStyleResult)
-      dvMainStore.updateCurDvInfo(dvInfo)
-      dvMainStore.setCanvasViewInfo(canvasViewInfoPreview)
-      // 刷新联动信息
-      getPanelAllLinkageInfo(dvInfo.id, params.resourceTable).then(rsp => {
-        dvMainStore.setNowPanelTrackInfo(rsp.data)
-      })
-      // 刷新跳转信息
-      queryVisualizationJumpInfo(dvInfo.id, params.resourceTable).then(rsp => {
-        dvMainStore.setNowPanelJumpInfo(rsp.data)
-      })
+      if (!params.onlyPreview) {
+        dvMainStore.setComponentData(canvasDataResult)
+        dvMainStore.setCanvasStyle(canvasStyleResult)
+        dvMainStore.updateCurDvInfo(dvInfo)
+        dvMainStore.setCanvasViewInfo(canvasViewInfoPreview)
+        // 刷新联动信息
+        getPanelAllLinkageInfo(dvInfo.id, params.resourceTable).then(rsp => {
+          dvMainStore.setNowPanelTrackInfo(rsp.data)
+        })
+        // 刷新跳转信息
+        queryVisualizationJumpInfo(dvInfo.id, params.resourceTable).then(rsp => {
+          dvMainStore.setNowPanelJumpInfo(rsp.data)
+        })
+      }
       callBack({ canvasDataResult, canvasStyleResult, dvInfo, canvasViewInfoPreview })
     }
   )
@@ -486,7 +559,7 @@ export function initCanvasDataMobile(dvId, params, callBack) {
         ele.commonBackground = mCommonBackground || commonBackground
         if (ele.component === 'DeTabs') {
           ele.propValue?.forEach(tabItem => {
-            tabItem.componentData.forEach(tabComponent => {
+            tabItem.componentData?.forEach(tabComponent => {
               tabComponent.style = tabComponent.mStyle || tabComponent.style
               tabComponent.propValue = tabComponent.mPropValue || tabComponent.propValue
               tabComponent.events = tabComponent.mEvents || tabComponent.events
@@ -528,12 +601,12 @@ export function initCanvasDataMobile(dvId, params, callBack) {
 
 export function checkCanvasChangePre(callBack) {
   // do pre
-  const isUpdate = dvInfo.value.id && dvInfo.value.optType !== 'copy'
+  const isUpdate = curDvInfo.value.id && curDvInfo.value.optType !== 'copy'
   // 桌面版为单人模式不需要检查
   if (isUpdate && !isDesktop()) {
-    const params = { ...dvInfo.value, watermarkInfo: null }
+    const params = { ...curDvInfo.value, watermarkInfo: null }
     const tips =
-      (dvInfo.value.type === 'dashboard'
+      (curDvInfo.value.type === 'dashboard'
         ? t('work_branch.dashboard')
         : t('work_branch.big_data_screen')) + t('visualization.save_conflict_tips')
     checkCanvasChange(params).then(rsp => {
@@ -556,6 +629,10 @@ export function checkCanvasChangePre(callBack) {
 }
 
 export async function canvasSave(callBack) {
+  await canvasSaveWithParams(null, callBack)
+}
+
+export async function canvasSaveWithParams(params, callBack) {
   dvMainStore.removeGroupArea()
   const componentDataToSave = cloneDeep(componentData.value)
   componentDataToSave.forEach(item => {
@@ -567,7 +644,7 @@ export async function canvasSave(callBack) {
       })
     } else if (item.component === 'DeTabs') {
       item.propValue?.forEach(tabItem => {
-        tabItem.componentData.forEach(tabComponent => {
+        tabItem.componentData?.forEach(tabComponent => {
           tabComponent.linkageFilters = []
         })
       })
@@ -579,7 +656,7 @@ export async function canvasSave(callBack) {
     componentData: JSON.stringify(componentDataToSave),
     canvasViewInfo: canvasViewInfo.value,
     appData: appData.value,
-    ...dvInfo.value,
+    ...curDvInfo.value,
     checkVersion: wsCache.get('x-de-execute-version'),
     contentId: newContentId,
     watermarkInfo: null
@@ -598,20 +675,26 @@ export async function canvasSave(callBack) {
     ElMessage.error('数据集分组名称已存在')
     return
   }
-  nameTrim(dvInfo.value, t('components.length_1_64_characters'))
-  const method = dvInfo.value.id && dvInfo.value.optType !== 'copy' ? updateCanvas : saveCanvas
+  nameTrim(curDvInfo.value, t('components.length_1_64_characters'))
+  const method =
+    curDvInfo.value.id && curDvInfo.value.optType !== 'copy' ? updateCanvas : saveCanvas
   if (method === updateCanvas) {
     await dvNameCheck({
       opt: 'edit',
       nodeType: 'leaf',
-      name: dvInfo.value.name,
-      type: dvInfo.value.type,
-      id: dvInfo.value.id
+      name: curDvInfo.value.name,
+      type: curDvInfo.value.type,
+      id: curDvInfo.value.id
     })
   }
   method(canvasInfo).then(res => {
-    // saveCanvas 为初次保存 状态为0 updateCanvas为二次保存状态为2
-    dvMainStore.updateDvInfoCall(method === updateCanvas ? 2 : 0, res.data, newContentId)
+    if (method === updateCanvas) {
+      // saveCanvas 为初次保存 状态为0 updateCanvas为二次保存状态为2 当存在传入状态时，则修改对应的传入状态
+      const status = params?.status ? params?.status : res.data?.status
+      dvMainStore.updateDvInfoCall(status, null, newContentId)
+    } else {
+      dvMainStore.updateDvInfoCall(0, res.data, newContentId)
+    }
     snapshotStore.resetStyleChangeTimes()
     callBack(res)
   })
@@ -636,7 +719,7 @@ export function setIdValueTrans(from, to, content, colList) {
     pre[next[from]] = next[to]
     return pre
   }, {})
-  const on = content?.match(/\[(.+?)\]/g)
+  const on = content?.match(/\[(.+?)\]/g) || []
   if (on) {
     on.forEach(itm => {
       const ele = itm.slice(1, -1)
@@ -654,7 +737,7 @@ export function checkJoinGroup(item) {
   if (item.component === 'DeTabs') {
     let result = true
     item.propValue?.forEach(tabItem => {
-      tabItem.componentData.forEach(tabComponent => {
+      tabItem.componentData?.forEach(tabComponent => {
         if (tabComponent.component === 'Group') {
           result = false
         }
@@ -721,7 +804,7 @@ export function canvasIdMapCheck(item, pItem, pathMap) {
   pathMap[item.id] = pItem
   if (item.component === 'DeTabs') {
     item.propValue?.forEach(tabItem => {
-      tabItem.componentData.forEach(tabComponent => {
+      tabItem.componentData?.forEach(tabComponent => {
         canvasIdMapCheck(tabComponent, item, pathMap)
       })
     })
@@ -803,7 +886,7 @@ export function findAllViewsId(componentData, idArray) {
       })
     } else if (item.component === 'DeTabs') {
       item.propValue?.forEach(tabItem => {
-        tabItem.componentData.forEach(tabComponent => {
+        tabItem.componentData?.forEach(tabComponent => {
           idArray.push(tabComponent.id)
         })
       })
@@ -902,12 +985,18 @@ export async function decompressionPre(params, callBack) {
     .catch(e => {
       console.error(e)
     })
-  historyAdaptor(deTemplateData.canvasStyleData, deTemplateData.componentData, null, null, null)
+  historyAdaptor(
+    deTemplateData.canvasStyleData,
+    deTemplateData.componentData,
+    null,
+    { resourceTable: 'snapshot' },
+    null
+  )
   callBack(deTemplateData)
 }
 
 export function isDashboard() {
-  return dvInfo.value.type === 'dashboard'
+  return curDvInfo.value.type === 'dashboard'
 }
 
 export function trackBarStyleCheck(element, trackbarStyle, _scale, trackMenuNumber) {
@@ -978,7 +1067,7 @@ export function findComponentById(componentId) {
       })
     } else if (item.component === 'DeTabs') {
       item.propValue?.forEach(tabItem => {
-        tabItem.componentData.forEach(tabComponent => {
+        tabItem.componentData?.forEach(tabComponent => {
           if (tabComponent.id === componentId) {
             result = tabComponent
           }
@@ -989,12 +1078,12 @@ export function findComponentById(componentId) {
   return result
 }
 
-export function onInitReady(params) {
+export function onInitReady(params, eventName = 'canvas_init_ready') {
   try {
-    console.info('Canvas initReady')
+    console.info('event:' + eventName)
     const targetPm = {
       type: 'dataease-embedded-interactive',
-      eventName: 'canvas_init_ready',
+      eventName: eventName,
       args: params
     }
     window.parent.postMessage(targetPm, '*')

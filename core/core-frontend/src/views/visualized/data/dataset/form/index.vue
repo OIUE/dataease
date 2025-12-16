@@ -46,12 +46,12 @@ import EmptyBackground from '@/components/empty-background/src/EmptyBackground.v
 import { Icon } from '@/components/icon-custom'
 import { useWindowSize } from '@vueuse/core'
 import CalcFieldEdit from './CalcFieldEdit.vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router_2'
 import UnionEdit from './UnionEdit.vue'
 import type { FormInstance } from 'element-plus-secondary'
 import type { BusiTreeNode } from '@/models/tree/TreeNode'
 import CreatDsGroup from './CreatDsGroup.vue'
-import { guid, getFieldName, timeTypes, type DataSource } from './util'
+import { guid, getFieldName, timeTypes, num, type DataSource } from './util'
 import { fieldType } from '@/utils/attr'
 import { cancelMap } from '@/config/axios/service'
 import { useEmbedded } from '@/store/modules/embedded'
@@ -86,7 +86,12 @@ const appStore = useAppStoreWithOut()
 const embeddedStore = useEmbedded()
 const { t } = useI18n()
 const route = useRoute()
-const { push } = useRouter()
+const { push } = useRouter() || {
+  push: val => {
+    if (embeddedStore.getToken) return
+    window.location.href = val as string
+  }
+}
 const quotaTableHeight = ref(238)
 const creatDsFolder = ref()
 const editCalcField = ref(false)
@@ -107,7 +112,7 @@ const showLeft = ref(true)
 const maskShow = ref(false)
 const loading = ref(false)
 const updateCustomTime = ref(false)
-const editerName = ref()
+const editorName = ref()
 const nameMap = ref({})
 const currentField = ref({
   dateFormat: '',
@@ -116,6 +121,7 @@ const currentField = ref({
   name: '',
   idArr: []
 })
+const isCross = ref(false)
 let isUpdate = false
 
 const fieldTypes = index => {
@@ -253,14 +259,14 @@ const getDsName = (id: string) => {
 }
 
 const pushDataset = () => {
+  wsCache.set(`dataset-info-id`, nodeInfo.id)
   if (appStore.isDataEaseBi) {
     embeddedStore.clearState()
     useEmitt().emitter.emit('changeCurrentComponent', 'Dataset')
     return
   }
   const routeName = embeddedStore.getToken && appStore.getIsIframe ? 'dataset-embedded' : 'dataset'
-  wsCache.set(`${routeName}-info-id`, nodeInfo.id)
-  if (!!history.state.back) {
+  if (!!history.state.back && !appStore.getIsIframe) {
     history.back()
   } else {
     push({
@@ -362,6 +368,7 @@ const editeSave = () => {
     ...nodeInfo,
     name: datasetName.value,
     union,
+    isCross: isCross.value,
     allFields: allfields.value,
     nodeType: 'dataset'
   })
@@ -486,7 +493,7 @@ const delFieldById = arr => {
     const allfieldsId = allfields.value.map(ele => ele.id).concat(paramsId)
     allfields.value = allfields.value.filter(ele => {
       if (![2, 3].includes(ele.extField)) return true
-      const idMap = ele.originName.match(/\[(.+?)\]/g)
+      const idMap = ele.originName.match(/\[(.+?)\]/g) || []
       if (!idMap) return true
       const result = idMap.every(itm => {
         const id = itm.slice(1, -1)
@@ -511,7 +518,7 @@ const delFieldByIdFake = (arr, fakeAllfields) => {
     const allfieldsId = fakeAllfields.map(ele => ele.id)
     fakeAllfields = fakeAllfields.filter(ele => {
       if (![2, 3].includes(ele.extField)) return true
-      const idMap = ele.originName.match(/\[(.+?)\]/g)
+      const idMap = ele.originName.match(/\[(.+?)\]/g) || []
       if (
         !idMap ||
         idMap.every(itx => ele.params?.map(element => element.id).includes(itx.slice(1, -1)))
@@ -570,7 +577,11 @@ const addCalcField = groupType => {
   editCalcField.value = true
   calcTitle.value = t('dataset.add_calc_field')
   nextTick(() => {
-    calcEdit.value.initEdit({ groupType, id: guid() }, dimensions.value, quota.value)
+    calcEdit.value.initEdit(
+      { groupType, id: guid() },
+      dimensions.value.filter(ele => ele.extField !== 3),
+      quota.value.filter(ele => ele.extField !== 3)
+    )
   })
 }
 
@@ -595,7 +606,11 @@ const editField = item => {
   editCalcField.value = true
   nextTick(() => {
     calcTitle.value = t('dataset.edit_calc_field')
-    calcEdit.value.initEdit(item, dimensions.value, quota.value)
+    calcEdit.value.initEdit(
+      item,
+      dimensions.value.filter(ele => ele.extField !== 3),
+      quota.value.filter(ele => ele.extField !== 3)
+    )
   })
 }
 
@@ -731,6 +746,7 @@ const initEdite = async () => {
     }
     datasetName.value = nodeInfo.name
     allfields.value = res.allFields || []
+    isCross.value = res.isCross || false
     dfsUnion(arr, res.union || [])
     const [fir] = res.union as { currentDs: { datasourceId: string } }[]
     dataSource.value = fir?.currentDs?.datasourceId
@@ -834,15 +850,14 @@ const getIconName = (type: number) => {
 const allfields = ref([])
 
 provide('allfields', allfields)
-
-let num = +new Date()
+provide('isCross', isCross)
 
 const expandedD = ref(true)
 const expandedQ = ref(true)
 const setGuid = (arr, id, datasourceId, oldArr) => {
   arr.forEach(ele => {
     if (!ele.id) {
-      ele.id = oldArr.find(itx => itx.originName === ele.originName)?.id || `${++num}`
+      ele.id = oldArr.find(itx => itx.originName === ele.originName)?.id || `${++num.value}`
       ele.datasetTableId = id
       ele.datasourceId = datasourceId
     }
@@ -952,7 +967,6 @@ const confirmEditUnion = () => {
   setGuid(parent.currentDsFields, parent.id, parent.datasourceId, parentOldCurrentDsFields)
   const top = cloneDeep(node)
   const bottom = cloneDeep(parent)
-
   let arr = []
   dfsFieldsTips(arr, datasetDrag.value.getNodeList(), [node.id, parent.id])
   arr = [...arr, ...node.currentDsFields, ...parent.currentDsFields]
@@ -962,7 +976,7 @@ const confirmEditUnion = () => {
   if (!!idList.length) {
     const idArr = allfields.value.reduce((pre, next) => {
       if (idList.includes(next.id)) {
-        const idMap = next.originName.match(/\[(.+?)\]/g)
+        const idMap = next.originName.match(/\[(.+?)\]/g) || []
         const result = idMap.map(itm => {
           return itm.slice(1, -1)
         })
@@ -1093,7 +1107,7 @@ const handleFieldschange = val => {
   const arr = []
   const allfieldsCopy = cloneDeep(unref(allfields))
   dfsNodeList(arr, datasetDrag.value.getNodeList())
-  enumValueDs({ dataset: { union: arr, allFields: allfieldsCopy }, field })
+  enumValueDs({ dataset: { union: arr, allFields: allfieldsCopy, isCross: isCross.value }, field })
     .then(res => {
       enumValue.value = res || []
     })
@@ -1146,7 +1160,6 @@ const initGroupField = val => {
 const confirmGroupField = () => {
   ruleGroupFieldRef.value.validate(val => {
     let count = 0
-    let flag = false
     let time
     refsForm.value.forEach(ele => {
       ele?.validate(val => {
@@ -1157,7 +1170,6 @@ const confirmGroupField = () => {
     })
     time = setTimeout(() => {
       clearTimeout(time)
-      flag = true
       time = null
       if (val && count === currentGroupField.groupList.length) {
         const groupList = []
@@ -1248,7 +1260,7 @@ const verify = () => {
       const arr = []
       dfsNodeList(arr, datasetDrag.value.getNodeList())
       datasetPreviewLoading.value = true
-      getPreviewData({ union: arr, allFields: allfieldsCopy })
+      getPreviewData({ union: arr, allFields: allfieldsCopy, isCross: isCross.value })
         .then(() => {
           ElMessage.success(t('data_set.validation_succeeded'))
         })
@@ -1346,7 +1358,7 @@ const getSqlResultHeight = () => {
 const getDatasource = (weight?: number) => {
   getDatasourceList(weight).then(res => {
     const _list = (res as unknown as DataSource[]) || []
-    if (_list && _list.length > 0 && _list[0].id === '0') {
+    if (_list && _list.length > 0 && _list[0].id === '0' && _list[0].children?.length) {
       state.dataSourceList = dfsChild(_list[0].children)
     } else {
       state.dataSourceList = dfsChild(_list)
@@ -1416,7 +1428,7 @@ const datasetSave = () => {
 
   creatDsFolder.value.createInit(
     'dataset',
-    { id: pid || '0', union, allfields: allfields.value },
+    { id: pid || '0', union, allfields: allfields.value, isCross: isCross.value },
     '',
     datasetName.value
   )
@@ -1433,7 +1445,7 @@ const datasetPreview = () => {
   const arr = []
   dfsNodeList(arr, datasetDrag.value.getNodeList())
   datasetPreviewLoading.value = true
-  getPreviewData({ union: arr, allFields: allfields.value })
+  getPreviewData({ union: arr, allFields: allfields.value, isCross: isCross.value })
     .then(res => {
       columns.value = generateColumns((res.data.fields as Field[]) || [])
       tableData.value = (res.data.data as Array<{}>) || []
@@ -1619,12 +1631,31 @@ const dfsUnion = (arr, list) => {
 const handleClick = () => {
   showInput.value = true
   nextTick(() => {
-    editerName.value.focus()
+    editorName.value.focus()
   })
+}
+
+const sourceChange = val => {
+  if (val) return
+  if (crossDatasources.value) {
+    isCross.value = !val
+    ElMessageBox.confirm(t('common.source_tips'), {
+      confirmButtonText: t('dataset.confirm'),
+      cancelButtonText: t('common.cancel'),
+      showCancelButton: true,
+      confirmButtonType: 'primary',
+      type: 'warning',
+      autofocus: false,
+      showClose: false
+    }).then(() => {
+      isCross.value = val
+    })
+  }
 }
 
 const finish = res => {
   const { id, pid, name } = res
+  isUpdate = false
   datasetName.value = name
   nodeInfo = {
     id,
@@ -1694,7 +1725,7 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
         <template v-if="showInput">
           <el-input
             maxlength="64"
-            ref="editerName"
+            ref="editorName"
             v-model="datasetName"
             @blur="handleDatasetName"
           />
@@ -1706,7 +1737,7 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
           }}</span>
         </template>
       </span>
-      <span class="oprate">
+      <span class="operate">
         <el-button :disabled="showInput" type="primary" @click="datasetSaveAndBack">{{
           t('data_set.save_and_return')
         }}</el-button>
@@ -1718,7 +1749,7 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
     <div class="container dataset-db" @mouseup="mouseupDrag">
       <p v-show="!showLeft" class="arrow-right" @click="showLeft = true">
         <el-icon>
-          <Icon name="icon_right_outlined"><icon_right_outlined class="svg-icon" /></Icon>
+          <Icon><icon_right_outlined class="svg-icon" /></Icon>
         </el-icon>
       </p>
       <div
@@ -1735,6 +1766,14 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
         :style="{ width: LeftWidth + 'px' }"
       >
         <div class="table-list-top">
+          <el-switch
+            style="margin-bottom: 8px"
+            v-model="isCross"
+            @change="sourceChange"
+            :active-text="$t('common.cross_source')"
+            :inactive-text="$t('common.single_source')"
+          />
+
           <p class="select-ds">
             {{ t('data_set.select_data_source') }}
             <span class="left-outlined">
@@ -2107,6 +2146,7 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
                           :class="
                             !!scope.row.deTypeArr && !!scope.row.deTypeArr.length && 'select-type'
                           "
+                          v-if="scope.row.extField !== 3"
                           popper-class="cascader-panel"
                           v-model="scope.row.deTypeArr"
                           @change="val => cascaderChange(scope.row, val)"
@@ -2127,6 +2167,7 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
                             <span>{{ data.label }}</span>
                           </template>
                         </el-cascader>
+                        <div style="padding-left: 30px" v-else>{{ $t('data_set.text') }}</div>
                         <span class="select-svg-icon">
                           <el-icon>
                             <Icon
@@ -2150,7 +2191,13 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
                     >
                       <template #default="scope">
                         <div class="column-style">
-                          <span class="flex-align-center icon" v-if="scope.row.extField === 0">
+                          <span style="color: #8d9199" v-if="scope.row.extField === 2">{{
+                            t('dataset.calc_field')
+                          }}</span>
+                          <span style="color: #8d9199" v-else-if="scope.row.extField === 3">{{
+                            t('dataset.grouping_field')
+                          }}</span>
+                          <span class="flex-align-center icon" v-else-if="scope.row.extField === 0">
                             <el-icon>
                               <Icon className="primary-color"
                                 ><component
@@ -2161,8 +2208,13 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
                             </el-icon>
                             {{ fieldTypes(scope.row.deExtractType) }}
                           </span>
-                          <span v-else style="color: #8d9199">{{ t('dataset.calc_field') }}</span>
                         </div>
+                      </template>
+                    </el-table-column>
+
+                    <el-table-column :label="t('chart.total_sort_field')" align="center" width="90">
+                      <template #default="scope">
+                        <el-checkbox v-model="scope.row.orderChecked" />
                       </template>
                     </el-table-column>
 
@@ -2344,7 +2396,13 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
                     >
                       <template #default="scope">
                         <div class="column-style">
-                          <span class="flex-align-center icon" v-if="scope.row.extField === 0">
+                          <span style="color: #8d9199" v-if="scope.row.extField === 2">{{
+                            t('dataset.calc_field')
+                          }}</span>
+                          <span style="color: #8d9199" v-else-if="scope.row.extField === 3">{{
+                            t('dataset.grouping_field')
+                          }}</span>
+                          <span class="flex-align-center icon" v-else-if="scope.row.extField === 0">
                             <el-icon>
                               <Icon className="green-color"
                                 ><component
@@ -2355,8 +2413,13 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
                             </el-icon>
                             {{ fieldTypes(scope.row.deExtractType) }}
                           </span>
-                          <span v-else style="color: #8d9199">{{ t('dataset.calc_field') }}</span>
                         </div>
+                      </template>
+                    </el-table-column>
+
+                    <el-table-column :label="t('chart.total_sort_field')" align="center" width="90">
+                      <template #default="scope">
+                        <el-checkbox v-model="scope.row.orderChecked" />
                       </template>
                     </el-table-column>
 
@@ -2506,7 +2569,7 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
     <el-drawer
       :title="t('dataset.edit_union_relation')"
       v-model="editUnion"
-      custom-class="union-dataset-drawer"
+      modal-class="union-dataset-drawer"
       size="840px"
       :before-close="closeEditUnion"
       direction="rtl"
@@ -2524,7 +2587,7 @@ const getIconNameCalc = (deType, extField, dimension = false) => {
     ref="creatDsFolder"
   ></creat-ds-group>
   <el-dialog
-    custom-class="calc-field-edit-dialog"
+    modal-class="calc-field-edit-dialog"
     v-model="editCalcField"
     width="1000px"
     :title="calcTitle"

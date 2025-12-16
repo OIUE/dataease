@@ -103,7 +103,7 @@ export const DEFAULT_COLOR_CASE_LIGHT: DeepPartial<ChartAttr> = {
   tableCell: {
     tableItemBgColor: '#FFFFFF',
     tableFontColor: '#000000',
-    tableItemSubBgColor: '#EEEEEE'
+    tableItemSubBgColor: '#1E90FF'
   }
 }
 
@@ -154,7 +154,7 @@ export const DEFAULT_COLOR_CASE_DARK: DeepPartial<ChartAttr> = {
   tableCell: {
     tableItemBgColor: '#131E42',
     tableFontColor: '#ffffff',
-    tableItemSubBgColor: '#EEEEEE'
+    tableItemSubBgColor: '#1E90FF'
   }
 }
 
@@ -344,7 +344,10 @@ export const DEFAULT_MISC: ChartMiscAttr = {
         symbolSize: 4
       }
     }
-  }
+  },
+  liquidShowBorder: false,
+  liquidBorderWidth: 4,
+  liquidBorderDistance: 8
 }
 
 export const DEFAULT_MARK = {
@@ -479,7 +482,8 @@ export const DEFAULT_TABLE_HEADER: ChartTableHeaderAttr = {
   headerGroupConfig: {
     columns: [],
     meta: []
-  }
+  },
+  rowHeaderFreeze: true
 }
 export const DEFAULT_TABLE_CELL: ChartTableCellAttr = {
   tableFontColor: '#000000',
@@ -547,7 +551,8 @@ export const DEFAULT_INDICATOR_NAME_STYLE: ChartIndicatorNameStyle = {
   fontFamily: 'Microsoft YaHei',
   letterSpace: 0,
   fontShadow: false,
-  nameValueSpacing: 0
+  nameValueSpacing: 0,
+  namePosition: 'bottom'
 }
 
 export const DEFAULT_TITLE_STYLE_BASE: ChartTextStyle = {
@@ -1722,7 +1727,9 @@ export const DEFAULT_BASIC_STYLE: ChartBasicStyle = {
   radarAreaColor: true,
   circleBorderColor: '#fff',
   circleBorderWidth: 0,
-  circlePadding: 0
+  circlePadding: 0,
+  quotaPosition: 'col',
+  quotaColLabel: t('dataset.value')
 }
 
 export const BASE_VIEW_CONFIG = {

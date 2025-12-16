@@ -6,7 +6,7 @@ import { storeToRefs } from 'pinia'
 import { findResourceAsBase64 } from '@/api/staticResource'
 import FileSaver from 'file-saver'
 import { deepCopy } from '@/utils/utils'
-import { toPng } from 'html-to-image'
+import { domToPng } from 'modern-screenshot'
 const embeddedStore = useEmbedded()
 const dvMainStore = dvMainStoreWithOut()
 const { canvasStyleData, componentData, canvasViewInfo, canvasViewDataInfo, dvInfo } =
@@ -44,9 +44,10 @@ export function download2AppTemplate(downloadType, canvasDom, name, attachParams
           canvasViewDataTemplate[viewId].data = canvasViewDataInfo.value[viewId]
         })
         const snapshot = canvas.toDataURL('image/jpeg', 0.1) // 0.1是图片质量
+        const templateName = attachParams?.appName ? attachParams.appName : name
         if (snapshot !== '') {
           const templateInfo = {
-            name: name,
+            name: templateName,
             templateType: 'self',
             snapshot: snapshot,
             dvType: dvInfo.value.type,
@@ -62,7 +63,7 @@ export function download2AppTemplate(downloadType, canvasDom, name, attachParams
           if (downloadType === 'template') {
             FileSaver.saveAs(blob, name + '-TEMPLATE.DET2')
           } else if (downloadType === 'app') {
-            FileSaver.saveAs(blob, name + '-APP.DET2APP')
+            FileSaver.saveAs(blob, templateName + '-APP.DET2APP')
           }
         }
         if (callBack) {
@@ -76,36 +77,6 @@ export function download2AppTemplate(downloadType, canvasDom, name, attachParams
     }
     console.error(e)
   }
-}
-
-export function downloadCanvas2(type, canvasDom, name, callBack?) {
-  toPng(canvasDom)
-    .then(dataUrl => {
-      if (type === 'img') {
-        const a = document.createElement('a')
-        a.setAttribute('download', name + '.png')
-        a.href = dataUrl
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-      } else {
-        const contentWidth = canvasDom.offsetWidth
-        const contentHeight = canvasDom.offsetHeight
-        const lp = contentWidth > contentHeight ? 'l' : 'p'
-        const PDF = new JsPDF(lp, 'pt', [contentWidth, contentHeight])
-        PDF.addImage(dataUrl, 'PNG', 0, 0, contentWidth, contentHeight)
-        PDF.save(name + '.pdf')
-      }
-      if (callBack) {
-        callBack()
-      }
-    })
-    .catch(error => {
-      if (callBack) {
-        callBack()
-      }
-      console.error('oops, something went wrong!', error)
-    })
 }
 
 export function downloadCanvas(type, canvasDom, name, callBack?) {
@@ -145,6 +116,36 @@ export function downloadCanvas(type, canvasDom, name, callBack?) {
   }
 }
 
+export function downloadCanvas2(type, canvasDom, name, callBack?) {
+  domToPng(canvasDom)
+    .then(dataUrl => {
+      if (type === 'img') {
+        const a = document.createElement('a')
+        a.setAttribute('download', name + '.png')
+        a.href = dataUrl
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      } else {
+        const contentWidth = canvasDom.offsetWidth
+        const contentHeight = canvasDom.offsetHeight
+        const lp = contentWidth > contentHeight ? 'l' : 'p'
+        const PDF = new JsPDF(lp, 'pt', [contentWidth, contentHeight])
+        PDF.addImage(dataUrl, 'PNG', 0, 0, contentWidth, contentHeight)
+        PDF.save(name + '.pdf')
+      }
+      if (callBack) {
+        callBack()
+      }
+    })
+    .catch(error => {
+      if (callBack) {
+        callBack()
+      }
+      console.error('oops, something went wrong!', error)
+    })
+}
+
 export function dataURLToBlob(dataUrl) {
   // ie 图片转格式
   const arr = dataUrl.split(',')
@@ -159,7 +160,7 @@ export function dataURLToBlob(dataUrl) {
 }
 
 function findStaticSourceInner(componentDataInfo, staticResource) {
-  componentDataInfo.forEach(item => {
+  componentDataInfo?.forEach(item => {
     if (
       typeof item.commonBackground.outerImage === 'string' &&
       item.commonBackground.outerImage.indexOf('static-resource') > -1
@@ -174,7 +175,8 @@ function findStaticSourceInner(componentDataInfo, staticResource) {
     ) {
       staticResource.push(item.propValue['url'])
     } else if (
-      item.component === 'picture-group' &&
+      item.component === 'UserView' &&
+      item.innerType === 'picture-group' &&
       item.propValue['urlList'] &&
       item.propValue['urlList'].length > 0
     ) {

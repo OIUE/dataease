@@ -1,7 +1,11 @@
 <template>
   <div
     class="shape"
-    :class="{ 'shape-group-area': isGroupArea, 'freeze-component': freezeFlag }"
+    :class="{
+      'shape-group-area': isGroupArea,
+      'freeze-component': freezeFlag,
+      'freeze-component-fullscreen': freezeFlag && fullscreenFlag
+    }"
     ref="shapeInnerRef"
     :id="domId"
     v-loading="downLoading"
@@ -55,6 +59,7 @@
         :element="element"
         :show-position="showPosition"
         :canvas-id="canvasId"
+        @componentImageDownload="htmlToImage"
         @userViewEnlargeOpen="userViewEnlargeOpen"
         @datasetParamsInit="datasetParamsInit"
         @linkJumpSetOpen="linkJumpSetOpen"
@@ -152,6 +157,8 @@ import {
 import Board from '@/components/de-board/Board.vue'
 import { activeWatermarkCheckUser, removeActiveWatermark } from '@/components/watermark/watermark'
 import { useI18n } from '@/hooks/web/useI18n'
+import { CommonBackground } from '@/components/visualization/component-background/Types'
+import { ShorthandMode } from '@/Types'
 const { t } = useI18n()
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
@@ -177,7 +184,8 @@ const {
   tabMoveOutComponentId,
   mobileInPc,
   mainScrollTop,
-  hiddenListStatus
+  hiddenListStatus,
+  fullscreenFlag
 } = storeToRefs(dvMainStore)
 const { editorMap, areaData, isCtrlOrCmdDown } = storeToRefs(composeStore)
 const emit = defineEmits([
@@ -330,6 +338,7 @@ const freezeFlag = computed(() => {
   return (
     isMainCanvas(canvasId.value) &&
     element.value.freeze &&
+    !mobileInPc.value &&
     mainScrollTop.value - defaultStyle.value.top > 0
   )
 })
@@ -728,8 +737,10 @@ const handleMouseDownOnPoint = (point, e) => {
   }
 
   // 获取画布位移信息
-  const editorRectInfo = editorMap.value[canvasId.value].getBoundingClientRect()
-
+  const editorRectInfo = editorMap.value[canvasId.value]?.getBoundingClientRect()
+  if (!editorRectInfo) {
+    return
+  }
   // 获取 point 与实际拖动基准点的差值
   const pointRect = e.target.getBoundingClientRect()
   // 当前点击圆点相对于画布的中心坐标
@@ -906,30 +917,6 @@ const commonBackgroundSvgInner = computed(() => {
   }
 })
 
-const padding3D = computed(() => {
-  const width = defaultStyle.value.width // 原始元素宽度
-  const height = defaultStyle.value.height // 原始元素高度
-  const rotateX = element.value['multiDimensional'].x // 旋转X角度
-  const rotateY = element.value['multiDimensional'].y // 旋转Y角度
-
-  // 将角度转换为弧度
-  const radX = (rotateX * Math.PI) / 180
-  const radY = (rotateY * Math.PI) / 180
-
-  // 计算旋转后新宽度和高度
-  const newWidth = Math.abs(width * Math.cos(radY)) + Math.abs(height * Math.sin(radX))
-  const newHeight = Math.abs(height * Math.cos(radX)) + Math.abs(width * Math.sin(radY))
-
-  // 计算需要的 padding
-  const paddingX = (newWidth - width) / 2
-  const paddingY = (newHeight - height) / 2
-
-  return {
-    paddingX: `${paddingX}px`,
-    paddingY: `${paddingY}px`
-  }
-})
-
 const componentBackgroundStyle = computed(() => {
   if (element.value.commonBackground && element.value.component !== 'GroupArea') {
     const {
@@ -943,10 +930,43 @@ const componentBackgroundStyle = computed(() => {
       innerPadding,
       borderRadius
     } = element.value.commonBackground
+    const commonBackground = element.value.commonBackground as CommonBackground
     const innerPaddingTarget = ['Group'].includes(element.value.component) ? 0 : innerPadding
+    let innerPaddingStyle = innerPaddingTarget * scale.value + 'px'
+    const paddingMode = commonBackground.innerPadding?.mode
+    if (paddingMode === ShorthandMode.Uniform) {
+      innerPaddingStyle = `${commonBackground.innerPadding?.top * scale.value}px`
+    } else if (paddingMode === ShorthandMode.Axis) {
+      innerPaddingStyle = `${commonBackground.innerPadding?.top * scale.value}px ${
+        commonBackground.innerPadding?.left * scale.value
+      }px`
+    } else if (paddingMode === ShorthandMode.PerEdge) {
+      innerPaddingStyle = `${commonBackground.innerPadding?.top * scale.value}px ${
+        commonBackground.innerPadding?.right * scale.value
+      }px ${commonBackground.innerPadding?.bottom * scale.value}px ${
+        commonBackground.innerPadding?.left * scale.value
+      }px`
+    }
+
+    let borderRadiusStyle = borderRadius + 'px'
+    const borderRadiusMode = commonBackground.borderRadius?.mode
+    if (borderRadiusMode === ShorthandMode.Uniform) {
+      borderRadiusStyle = `${commonBackground.borderRadius?.topLeft * scale.value}px`
+    } else if (borderRadiusMode === ShorthandMode.Axis) {
+      borderRadiusStyle = `${commonBackground.borderRadius?.topLeft * scale.value}px ${
+        commonBackground.borderRadius?.bottomLeft * scale.value
+      }px`
+    } else if (borderRadiusMode === ShorthandMode.PerEdge) {
+      borderRadiusStyle = `${commonBackground.borderRadius?.topLeft * scale.value}px ${
+        commonBackground.borderRadius?.topRight * scale.value
+      }px ${commonBackground.borderRadius?.bottomRight * scale.value}px ${
+        commonBackground.borderRadius?.bottomLeft * scale.value
+      }px`
+    }
+
     let style = {
-      padding: innerPaddingTarget * scale.value + 'px',
-      borderRadius: borderRadius + 'px'
+      padding: innerPaddingStyle,
+      borderRadius: borderRadiusStyle
     }
     let colorRGBA = ''
     if (backgroundColorSelect && backgroundColor) {
@@ -1119,7 +1139,8 @@ const htmlToImage = () => {
   useEmitt().emitter.emit('l7-prepare-picture', element.value.id)
   setTimeout(() => {
     activeWatermarkCheckUser(viewDemoInnerId.value, 'canvas-main', scale.value)
-    downloadCanvas2('img', componentInnerRef.value, '图表', () => {
+    const dom = document.getElementById(viewDemoInnerId.value)
+    downloadCanvas2('img', dom, '图表', () => {
       // do callback
       removeActiveWatermark(viewDemoInnerId.value)
       downLoading.value = false
@@ -1201,7 +1222,7 @@ onMounted(() => {
 }
 
 .shape-selected {
-  outline: 1px solid #3370ff;
+  outline: 1px solid var(--ed-color-primary, #3370ff);
 }
 
 .shape-edit {
@@ -1332,5 +1353,9 @@ onMounted(() => {
   position: fixed;
   z-index: 1;
   top: 66px !important;
+}
+
+.freeze-component-fullscreen {
+  top: 5px !important;
 }
 </style>

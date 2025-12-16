@@ -6,7 +6,10 @@ import io.dataease.api.permissions.dataset.api.RowPermissionsApi;
 import io.dataease.api.permissions.user.vo.UserFormVO;
 import io.dataease.commons.utils.SqlparserUtils;
 import io.dataease.constant.AuthEnum;
+import io.dataease.constant.SQLConstants;
 import io.dataease.dataset.constant.DatasetTableType;
+import io.dataease.dataset.dao.auto.entity.CoreDatasetGroup;
+import io.dataease.dataset.dao.auto.mapper.CoreDatasetGroupMapper;
 import io.dataease.dataset.utils.DatasetTableTypeConstants;
 import io.dataease.dataset.utils.SqlUtils;
 import io.dataease.dataset.utils.TableUtils;
@@ -15,7 +18,6 @@ import io.dataease.datasource.dao.auto.mapper.CoreDatasourceMapper;
 import io.dataease.datasource.manage.DataSourceManage;
 import io.dataease.datasource.manage.EngineManage;
 import io.dataease.engine.constant.ExtFieldConstant;
-import io.dataease.constant.SQLConstants;
 import io.dataease.exception.DEException;
 import io.dataease.extensions.datasource.api.PluginManageApi;
 import io.dataease.extensions.datasource.dto.DatasetTableDTO;
@@ -69,6 +71,10 @@ public class DatasetSQLManage {
     private RowPermissionsApi rowPermissionsApi;
     @Resource
     private DataSourceManage dataSourceManage;
+    @Resource
+    private DatasetGroupManage datasetGroupManage;
+    @Resource
+    private CoreDatasetGroupMapper coreDatasetGroupMapper;
 
     private RowPermissionsApi getRowPermissionsApi() {
         return rowPermissionsApi;
@@ -118,6 +124,10 @@ public class DatasetSQLManage {
     }
 
     public Map<String, Object> getUnionSQLForEdit(DatasetGroupInfoDTO dataTableInfoDTO, ChartExtRequest chartExtRequest) throws Exception {
+        return getUnionSQLForEdit(dataTableInfoDTO, chartExtRequest, null);
+    }
+
+    public Map<String, Object> getUnionSQLForEdit(DatasetGroupInfoDTO dataTableInfoDTO, ChartExtRequest chartExtRequest, CoreDatasource coreDatasource) throws Exception {
         Map<Long, DatasourceSchemaDTO> dsMap = new LinkedHashMap<>();
         List<UnionDTO> union = dataTableInfoDTO.getUnion();
         // 所有选中的字段，即select后的查询字段
@@ -125,22 +135,12 @@ public class DatasetSQLManage {
         List<UnionParamDTO> unionList = new ArrayList<>();
         List<DatasetTableFieldDTO> checkedFields = new ArrayList<>();
         String sql = "";
-
         if (ObjectUtils.isEmpty(union)) {
             return null;
         }
-        Set<Long> allDs = getAllDs(union);
-        boolean isCross = allDs.size() > 1;
-
+        boolean isCross = dataTableInfoDTO.getIsCross();
         DatasetTableDTO currentDs = union.get(0).getCurrentDs();
-
-        // get datasource and schema,put map
-        String tableSchema = putObj2Map(dsMap, currentDs, isCross);
-        // get table
-        DatasetTableInfoDTO infoDTO = JsonUtil.parseObject(currentDs.getInfo(), DatasetTableInfoDTO.class);
-
-        SQLObj tableName = getUnionTable(currentDs, infoDTO, tableSchema, 0, filterParameters(chartExtRequest, currentDs.getId()), chartExtRequest == null, isCross, dsMap);
-
+        SQLObj tableName = null;
         for (int i = 0; i < union.size(); i++) {
             UnionDTO unionDTO = union.get(i);
             DatasetTableDTO datasetTable = unionDTO.getCurrentDs();
@@ -150,22 +150,19 @@ public class DatasetSQLManage {
             if (dsMap.containsKey(datasetTable.getDatasourceId())) {
                 schema = dsMap.get(datasetTable.getDatasourceId()).getSchemaAlias();
             } else {
-                schema = putObj2Map(dsMap, datasetTable, isCross);
+                schema = putObj2Map(dsMap, datasetTable, isCross, coreDatasource);
             }
             SQLObj table = getUnionTable(datasetTable, tableInfo, schema, i, filterParameters(chartExtRequest, currentDs.getId()), chartExtRequest == null, isCross, dsMap);
-
+            if (i == 0) {
+                tableName = table;
+            }
             // 获取前端传过来选中的字段
             List<DatasetTableFieldDTO> fields = unionDTO.getCurrentDsFields();
             fields = fields.stream().filter(DatasetTableFieldDTO::getChecked).collect(Collectors.toList());
 
             String[] array = fields.stream()
                     .map(f -> {
-                        String alias;
-                        if (StringUtils.isEmpty(f.getDataeaseName())) {
-                            alias = TableUtils.fieldNameShort(table.getTableAlias() + "_" + f.getOriginName());
-                        } else {
-                            alias = f.getDataeaseName();
-                        }
+                        String alias = TableUtils.fieldNameShort(table.getTableAlias() + "_" + f.getOriginName());
 
                         f.setFieldShortName(alias);
                         f.setDataeaseName(f.getFieldShortName());
@@ -335,12 +332,7 @@ public class DatasetSQLManage {
 
             String[] array = fields.stream()
                     .map(f -> {
-                        String alias;
-                        if (StringUtils.isEmpty(f.getDataeaseName())) {
-                            alias = TableUtils.fieldNameShort(table.getTableAlias() + "_" + f.getOriginName());
-                        } else {
-                            alias = f.getDataeaseName();
-                        }
+                        String alias = TableUtils.fieldNameShort(table.getTableAlias() + "_" + f.getOriginName());
 
                         f.setFieldShortName(alias);
                         f.setDataeaseName(f.getFieldShortName());
@@ -493,25 +485,31 @@ public class DatasetSQLManage {
         return tableObj;
     }
 
-    private String putObj2Map(Map<Long, DatasourceSchemaDTO> dsMap, DatasetTableDTO ds, boolean isCross) throws Exception {
+    public String putObj2Map(Map<Long, DatasourceSchemaDTO> dsMap, DatasetTableDTO ds, boolean isCross) {
+        return putObj2Map(dsMap, ds, isCross, null);
+    }
+
+    public String putObj2Map(Map<Long, DatasourceSchemaDTO> dsMap, DatasetTableDTO ds, boolean isCross, CoreDatasource coreDatasource) {
         // 通过datasource id校验数据源权限
-        BusiPerCheckDTO dto = new BusiPerCheckDTO();
-        dto.setId(ds.getDatasourceId());
-        dto.setAuthEnum(AuthEnum.READ);
-        boolean checked = corePermissionManage.checkAuth(dto);
-        if (!checked) {
-            DEException.throwException(Translator.get("i18n_no_datasource_permission"));
+        if (ObjectUtils.isEmpty(coreDatasource)) {
+            BusiPerCheckDTO dto = new BusiPerCheckDTO();
+            dto.setId(ds.getDatasourceId());
+            dto.setAuthEnum(AuthEnum.READ);
+            boolean checked = corePermissionManage.checkAuth(dto);
+            if (!checked) {
+                DEException.throwException(Translator.get("i18n_no_datasource_permission"));
+            }
         }
-
-
         String schemaAlias;
         if (StringUtils.equalsIgnoreCase(ds.getType(), DatasetTableType.DB) || StringUtils.equalsIgnoreCase(ds.getType(), DatasetTableType.SQL)) {
-            CoreDatasource coreDatasource = dataSourceManage.getCoreDatasource(ds.getDatasourceId());
-            if (coreDatasource == null) {
-                DEException.throwException(Translator.get("i18n_dataset_ds_error") + ",ID:" + ds.getDatasourceId());
-            }
-            if (coreDatasource.getType().contains(DatasourceConfiguration.DatasourceType.Excel.name()) || coreDatasource.getType().contains(DatasourceConfiguration.DatasourceType.API.name())) {
-                coreDatasource = engineManage.getDeEngine();
+            if (ObjectUtils.isEmpty(coreDatasource)) {
+                coreDatasource = dataSourceManage.getCoreDatasource(ds.getDatasourceId());
+                if (coreDatasource == null) {
+                    DEException.throwException(Translator.get("i18n_dataset_ds_error") + ",ID:" + ds.getDatasourceId());
+                }
+                if (coreDatasource.getType().contains(DatasourceConfiguration.DatasourceType.Excel.name()) || coreDatasource.getType().contains(DatasourceConfiguration.DatasourceType.API.name())) {
+                    coreDatasource = engineManage.getDeEngine();
+                }
             }
 
             Map map = JsonUtil.parseObject(coreDatasource.getConfiguration(), Map.class);
@@ -528,7 +526,9 @@ public class DatasetSQLManage {
                 dsMap.put(coreDatasource.getId(), datasourceSchemaDTO);
             }
         } else if (StringUtils.equalsIgnoreCase(ds.getType(), DatasetTableType.Es)) {
-            CoreDatasource coreDatasource = dataSourceManage.getCoreDatasource(ds.getDatasourceId());
+            if (ObjectUtils.isEmpty(coreDatasource)) {
+                coreDatasource = dataSourceManage.getCoreDatasource(ds.getDatasourceId());
+            }
             schemaAlias = String.format(SQLConstants.SCHEMA, coreDatasource.getId());
             if (!dsMap.containsKey(coreDatasource.getId())) {
                 DatasourceSchemaDTO datasourceSchemaDTO = new DatasourceSchemaDTO();
@@ -537,7 +537,9 @@ public class DatasetSQLManage {
                 dsMap.put(coreDatasource.getId(), datasourceSchemaDTO);
             }
         } else {
-            CoreDatasource coreDatasource = engineManage.getDeEngine();
+            if (ObjectUtils.isEmpty(coreDatasource)) {
+                coreDatasource = engineManage.getDeEngine();
+            }
             schemaAlias = String.format(SQLConstants.SCHEMA, coreDatasource.getId());
             if (!dsMap.containsKey(coreDatasource.getId())) {
                 DatasourceSchemaDTO datasourceSchemaDTO = new DatasourceSchemaDTO();
@@ -547,5 +549,21 @@ public class DatasetSQLManage {
             }
         }
         return schemaAlias;
+    }
+
+    public void datasetCrossDefault() {
+        List<DatasetGroupInfoDTO> allList = datasetGroupManage.getAllList();
+        for (DatasetGroupInfoDTO ele : allList) {
+            mergeDatasetCrossDefault(ele);
+            CoreDatasetGroup record = new CoreDatasetGroup();
+            BeanUtils.copyBean(record, ele);
+            coreDatasetGroupMapper.updateById(record);
+        }
+    }
+
+    public void mergeDatasetCrossDefault(DatasetGroupInfoDTO ele) {
+        Set<Long> allDs = getAllDs(ele.getUnion());
+        boolean isCross = allDs.size() > 1;
+        ele.setIsCross(isCross);
     }
 }

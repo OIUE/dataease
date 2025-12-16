@@ -2,8 +2,6 @@ import { BusiTreeNode } from '@/models/tree/TreeNode'
 import { useCache } from '@/hooks/web/useCache'
 import { loadScript } from '@/utils/RemoteJs'
 import { ElMessage } from 'element-plus-secondary'
-import { useI18n } from '@/hooks/web/useI18n'
-const { t } = useI18n()
 
 const { wsCache } = useCache()
 export function deepCopy(target) {
@@ -297,7 +295,7 @@ export const nameTrim = (target: {}, msg = '名称字段长度1-64个字符') =>
 }
 
 export const getActiveCategories = contents => {
-  const result = []
+  const result = ['最近使用']
   if (contents) {
     contents.forEach(item => {
       if (item.showFlag) {

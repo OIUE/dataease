@@ -5,7 +5,9 @@ import {
   isAlphaColor,
   isTransparent,
   parseJson,
-  resetRgbOpacity
+  resetRgbOpacity,
+  safeDecimalSum,
+  safeDecimalMean
 } from '../..//util'
 import {
   DEFAULT_BASIC_STYLE,
@@ -57,16 +59,18 @@ import {
   repeat,
   sumBy,
   size,
-  sum
+  sum,
+  isNumber
 } from 'lodash-es'
-import {createVNode, render} from 'vue'
+import { createVNode, render } from 'vue'
 import TableTooltip from '@/views/chart/components/editor/common/TableTooltip.vue'
 import Exceljs from 'exceljs'
-import {saveAs} from 'file-saver'
-import {ElMessage} from 'element-plus-secondary'
-import {useI18n} from '@/hooks/web/useI18n'
+import { saveAs } from 'file-saver'
+import { ElMessage } from 'element-plus-secondary'
+import { useI18n } from '@/hooks/web/useI18n'
+import Decimal from 'decimal.js'
 
-const {t: i18nt} = useI18n()
+const { t: i18nt } = useI18n()
 
 export function getCustomTheme(chart: Chart): S2Theme {
   const headerColor = hexColorToRGBA(
@@ -215,7 +219,7 @@ export function getCustomTheme(chart: Chart): S2Theme {
   let customAttr: DeepPartial<ChartAttr>
   if (chart.customAttr) {
     customAttr = parseJson(chart.customAttr)
-    const {basicStyle, tableHeader, tableCell} = customAttr
+    const { basicStyle, tableHeader, tableCell } = customAttr
     // basic
     if (basicStyle) {
       const tableBorderColor = basicStyle.tableBorderColor
@@ -267,7 +271,7 @@ export function getCustomTheme(chart: Chart): S2Theme {
       }
       const fontStyle = tableHeader.isItalic ? 'italic' : 'normal'
       const fontWeight = tableHeader.isBolder === false ? 'normal' : 'bold'
-      const {tableHeaderAlign, tableTitleFontSize} = tableHeader
+      const { tableHeaderAlign, tableTitleFontSize } = tableHeader
       const tmpTheme: S2Theme = {
         cornerCell: {
           cell: {
@@ -382,7 +386,7 @@ export function getCustomTheme(chart: Chart): S2Theme {
       }
       const fontStyle = tableCell.isItalic ? 'italic' : 'normal'
       const fontWeight = tableCell.isBolder === false ? 'normal' : 'bold'
-      const {tableItemAlign, tableItemFontSize, enableTableCrossBG} = tableCell
+      const { tableItemAlign, tableItemFontSize, enableTableCrossBG } = tableCell
       const tmpTheme: S2Theme = {
         rowCell: {
           cell: {
@@ -492,7 +496,7 @@ export function getStyle(chart: Chart, dataConfig: S2DataConfig): Style {
   let customAttr: DeepPartial<ChartAttr>
   if (chart.customAttr) {
     customAttr = parseJson(chart.customAttr)
-    const {basicStyle, tableHeader, tableCell} = customAttr
+    const { basicStyle, tableHeader, tableCell } = customAttr
     style.colCfg = {
       height: tableHeader.tableTitleHeight
     }
@@ -513,7 +517,7 @@ export function getStyle(chart: Chart, dataConfig: S2DataConfig): Style {
           }, {}) || {}
         // 下钻字段使用入口字段的宽度
         if (chart.drill) {
-          const {xAxis} = parseJson(chart)
+          const { xAxis } = parseJson(chart)
           const curDrillField = chart.drillFields[chart.drillFilters.length]
           const drillEnterFieldIndex = xAxis.findIndex(
             item => item.id === chart.drillFilters[0].fieldId
@@ -605,7 +609,7 @@ export function getCurrentField(valueFieldList: Axis[], field: ChartViewField) {
 }
 
 export function getConditions(chart: Chart) {
-  const {threshold} = parseJson(chart.senior)
+  const { threshold } = parseJson(chart.senior)
   if (!threshold.enable) {
     return
   }
@@ -617,17 +621,20 @@ export function getConditions(chart: Chart) {
 
   const dimFields = [...chart.xAxis, ...chart.xAxisExt].map(i => i.dataeaseName)
   if (conditions?.length > 0) {
-    const {tableCell, basicStyle, tableHeader} = parseJson(chart.customAttr)
+    const { tableCell, basicStyle, tableHeader } = parseJson(chart.customAttr)
     // 合并单元格时斑马纹失效
-    const enableTableCrossBG = chart.type === 'table-info' ? tableCell.enableTableCrossBG && !tableCell.mergeCells : tableCell.enableTableCrossBG
+    const enableTableCrossBG =
+      chart.type === 'table-info'
+        ? tableCell.enableTableCrossBG && !tableCell.mergeCells
+        : tableCell.enableTableCrossBG
     const valueColor = isAlphaColor(tableCell.tableFontColor)
       ? tableCell.tableFontColor
       : hexColorToRGBA(tableCell.tableFontColor, basicStyle.alpha)
     const valueBgColor = enableTableCrossBG
       ? null
       : isAlphaColor(tableCell.tableItemBgColor)
-        ? tableCell.tableItemBgColor
-        : hexColorToRGBA(tableCell.tableItemBgColor, basicStyle.alpha)
+      ? tableCell.tableItemBgColor
+      : hexColorToRGBA(tableCell.tableItemBgColor, basicStyle.alpha)
     const headerValueColor = tableHeader.tableHeaderFontColor
     const headerValueBgColor = isAlphaColor(tableHeader.tableHeaderBgColor)
       ? tableHeader.tableHeaderBgColor
@@ -646,7 +653,7 @@ export function getConditions(chart: Chart) {
         field: field.field.dataeaseName,
         mapping(value, rowData) {
           // 总计小计
-          if (rowData?.isTotals) {
+          if (rowData?.isGrandTotals || rowData?.isSubTotals) {
             return null
           }
           // 表头
@@ -661,7 +668,7 @@ export function getConditions(chart: Chart) {
       res.background.push({
         field: field.field.dataeaseName,
         mapping(value, rowData) {
-          if (rowData?.isTotals) {
+          if (rowData?.isGrandTotals || rowData?.isSubTotals) {
             return null
           }
           if (rowData?.id && rowData?.field === rowData.id) {
@@ -678,7 +685,7 @@ export function getConditions(chart: Chart) {
           if (isTransparent(fill)) {
             return null
           }
-          return {fill}
+          return { fill }
         }
       })
     }
@@ -730,23 +737,33 @@ export function mappingColor(value, defaultColor, field, type, filedValueMap?, r
           flag = true
         }
       } else if (t.term === 'le') {
-        if (value <= tv) {
+        if (value !== null && value <= tv) {
           color = t[type]
           flag = true
         }
       } else if (t.term === 'ge') {
-        if (value >= tv) {
+        if (value !== null && value >= tv) {
           color = t[type]
           flag = true
         }
       } else if (t.term === 'between') {
-        if (min <= value && value <= max) {
+        if (value !== null && min <= value && value <= max) {
           color = t[type]
           flag = true
         }
       } else if (t.term === 'default') {
         color = t[type]
         flag = true
+      } else if (t.term === 'null') {
+        if (value === null || value === undefined || value === '') {
+          color = t[type]
+          flag = true
+        }
+      } else if (t.term === 'not_null') {
+        if (value !== null && value !== undefined && value !== '') {
+          color = t[type]
+          flag = true
+        }
       }
       if (flag) {
         break
@@ -794,8 +811,25 @@ export function mappingColor(value, defaultColor, field, type, filedValueMap?, r
         color = defaultColor
       }
     } else {
-      // time
       const fc = field.conditions[i]
+      if (fc.term === 'null') {
+        if (value === null && value === undefined && value === '') {
+          color = fc[type]
+          flag = true
+        }
+      } else if (fc.term === 'not_null') {
+        if (value !== null && value !== undefined && value !== '') {
+          color = fc[type]
+          flag = true
+        }
+      }
+      if (flag) {
+        break
+      }
+      // time
+      if (!tv || !value) {
+        break
+      }
       tv = new Date(tv.replace(/-/g, '/') + ' GMT+8').getTime()
       const v = new Date(value.replace(/-/g, '/') + ' GMT+8').getTime()
       if (fc.term === 'eq') {
@@ -895,7 +929,7 @@ export function handleTableEmptyStrategy(chart: Chart) {
 
 export class SortTooltip extends BaseTooltip {
   show(showOptions) {
-    const {iconName} = showOptions
+    const { iconName } = showOptions
     if (iconName) {
       this.showSortTooltip(showOptions)
       return
@@ -904,9 +938,9 @@ export class SortTooltip extends BaseTooltip {
   }
 
   showSortTooltip(showOptions) {
-    const {position, options, meta, event} = showOptions
-    const {enterable} = getTooltipDefaultOptions(options)
-    const {autoAdjustBoundary, adjustPosition} = this.spreadsheet.options.tooltip || {}
+    const { position, options, meta, event } = showOptions
+    const { enterable } = getTooltipDefaultOptions(options)
+    const { autoAdjustBoundary, adjustPosition } = this.spreadsheet.options.tooltip || {}
     this.visible = true
     this.options = showOptions
     const container = this['getContainer']()
@@ -920,14 +954,14 @@ export class SortTooltip extends BaseTooltip {
     this.spreadsheet.tooltip.container.appendChild(childElement)
     render(vNode, childElement)
 
-    const {x, y} = getAutoAdjustPosition({
+    const { x, y } = getAutoAdjustPosition({
       spreadsheet: this.spreadsheet,
       position,
       tooltipContainer: container,
       autoAdjustBoundary
     })
 
-    this.position = adjustPosition?.({position: {x, y}, event}) ?? {
+    this.position = adjustPosition?.({ position: { x, y }, event }) ?? {
       x,
       y
     }
@@ -960,7 +994,7 @@ function svg2Base64(svg) {
 }
 
 export function configHeaderInteraction(chart: Chart, option: S2Options) {
-  const {tableHeaderFontColor, tableHeaderSort} = parseJson(chart.customAttr).tableHeader
+  const { tableHeaderFontColor, tableHeaderSort } = parseJson(chart.customAttr).tableHeader
   if (!tableHeaderSort) {
     return
   }
@@ -1012,7 +1046,7 @@ export function configHeaderInteraction(chart: Chart, option: S2Options) {
         return iconName === `customSortDefault${randomSuffix}`
       },
       onClick: props => {
-        const {meta, event} = props
+        const { meta, event } = props
         meta.spreadsheet.showTooltip({
           position: {
             x: event.clientX,
@@ -1040,7 +1074,7 @@ export function configHeaderInteraction(chart: Chart, option: S2Options) {
 }
 
 export function configTooltip(chart: Chart, option: S2Options) {
-  const {tooltip} = parseJson(chart.customAttr)
+  const { tooltip } = parseJson(chart.customAttr)
   const textFontFamily = chart.fontFamily ? chart.fontFamily : FONT_FAMILY
   option.tooltip = {
     ...option.tooltip,
@@ -1055,7 +1089,7 @@ export function configTooltip(chart: Chart, option: S2Options) {
       opacity: 0.95,
       position: 'absolute'
     },
-    adjustPosition: ({event}) => {
+    adjustPosition: ({ event }) => {
       return getTooltipPosition(event)
     }
   }
@@ -1070,14 +1104,21 @@ export function copyContent(s2Instance: SpreadSheet, event, fieldMeta) {
   let content = ''
   // 多选
   if (selectState.stateName === InteractionStateName.SELECTED) {
-    const {cells} = selectState
+    const { cells } = selectState
     if (!cells?.length) {
       return
     }
     if (cells.length === 1) {
       const curCell = cells[0]
       if (cell.getMeta().id === curCell.id) {
-        copyString(cellMeta.value + '', true)
+        const cellMeta = cell.getMeta()
+        const value = cellMeta.data?.[cellMeta.valueField]
+        const metaObj = find(fieldMeta, m => m.field === cellMeta.valueField)
+        let fieldVal = value?.toString()
+        if (metaObj) {
+          fieldVal = metaObj.formatter(value)
+        }
+        copyString(fieldVal, true)
       }
       s2Instance.interaction.clearState()
       return
@@ -1165,13 +1206,13 @@ export function copyContent(s2Instance: SpreadSheet, event, fieldMeta) {
 
 function getTooltipPosition(event) {
   const s2Instance = event.s2Instance
-  const {x, y} = event
-  const result = {x: x + 15, y}
+  const { x, y } = event
+  const result = { x: x + 15, y }
   if (!s2Instance) {
     return result
   }
-  const {height, width} = s2Instance.getCanvasElement().getBoundingClientRect()
-  const {offsetHeight, offsetWidth} = s2Instance.tooltip.getContainer()
+  const { height, width } = s2Instance.getCanvasElement().getBoundingClientRect()
+  const { offsetHeight, offsetWidth } = s2Instance.tooltip.getContainer()
   if (offsetWidth > width) {
     result.x = 0
   }
@@ -1199,11 +1240,11 @@ function getTooltipPosition(event) {
 }
 
 export async function exportGridPivot(instance: PivotSheet, chart: ChartObj) {
-  const {layoutResult} = instance.facet
-  const {meta, fields} = instance.dataCfg
+  const { layoutResult } = instance.facet
+  const { meta, fields } = instance.dataCfg
   const rowLength = fields?.rows?.length || 0
   const colLength = fields?.columns?.length || 0
-  const colNums = layoutResult.colLeafNodes.length + rowLength + 1
+  const colNums = layoutResult.colLeafNodes.length + rowLength
   if (colNums > 16384) {
     ElMessage.warning(i18nt('chart.pivot_export_invalid_col_exceed'))
     return
@@ -1220,27 +1261,27 @@ export async function exportGridPivot(instance: PivotSheet, chart: ChartObj) {
   fields.columns?.forEach((column, index) => {
     const cell = worksheet.getCell(index + 1, 1)
     cell.value = metaMap[column]?.name ?? column
-    cell.alignment = {vertical: 'middle', horizontal: 'center'}
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
     if (rowLength >= 2) {
       worksheet.mergeCells(index + 1, 1, index + 1, rowLength)
     }
     cell.border = {
-      right: {style: 'thick', color: {argb: '00000000'}}
+      right: { style: 'thick', color: { argb: '00000000' } }
     }
   })
   fields?.rows?.forEach((row, index) => {
     const cell = worksheet.getCell(colLength + 1, index + 1)
     cell.value = metaMap[row]?.name ?? row
-    cell.alignment = {vertical: 'middle', horizontal: 'center'}
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
     cell.border = {
-      bottom: {style: 'thick', color: {argb: '00000000'}}
+      bottom: { style: 'thick', color: { argb: '00000000' } }
     }
     if (index === fields.rows.length - 1) {
-      cell.border.right = {style: 'thick', color: {argb: '00000000'}}
+      cell.border.right = { style: 'thick', color: { argb: '00000000' } }
     }
   })
   // 行头
-  const {rowLeafNodes, rowsHierarchy, rowNodes} = layoutResult
+  const { rowLeafNodes, rowsHierarchy, rowNodes } = layoutResult
   const maxColIndex = rowsHierarchy.maxLevel + 1
   const notLeafNodeHeightMap: Record<string, number> = {}
   rowLeafNodes.forEach(node => {
@@ -1251,17 +1292,17 @@ export async function exportGridPivot(instance: PivotSheet, chart: ChartObj) {
       notLeafNodeHeightMap[curNode.id] = height + 1
       curNode = curNode.parent
     }
-    const {rowIndex} = node
+    const { rowIndex } = node
     const writeRowIndex = rowIndex + 1 + colLength + 1
     const writeColIndex = node.level + 1
     const cell = worksheet.getCell(writeRowIndex, writeColIndex)
     cell.value = node.label
-    cell.alignment = {vertical: 'middle', horizontal: 'center'}
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
     if (writeColIndex < maxColIndex) {
       worksheet.mergeCells(writeRowIndex, writeColIndex, writeRowIndex, maxColIndex)
     }
     cell.border = {
-      right: {style: 'thick', color: {argb: '00000000'}}
+      right: { style: 'thick', color: { argb: '00000000' } }
     }
   })
 
@@ -1283,7 +1324,7 @@ export async function exportGridPivot(instance: PivotSheet, chart: ChartObj) {
     const value = node.label
     const cell = worksheet.getCell(writeRowIndex, node.level + 1)
     cell.value = value
-    cell.alignment = {vertical: 'middle', horizontal: 'center'}
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
     if (mergeColCount > 1 || height > 1) {
       worksheet.mergeCells(
         writeRowIndex,
@@ -1295,7 +1336,7 @@ export async function exportGridPivot(instance: PivotSheet, chart: ChartObj) {
   })
 
   // 列头
-  const {colLeafNodes, colNodes, colsHierarchy} = layoutResult
+  const { colLeafNodes, colNodes, colsHierarchy } = layoutResult
   const maxColHeight = colsHierarchy.maxLevel + 1
   const notLeafNodeWidthMap: Record<string, number> = {}
   colLeafNodes.forEach(node => {
@@ -1306,7 +1347,7 @@ export async function exportGridPivot(instance: PivotSheet, chart: ChartObj) {
       notLeafNodeWidthMap[curNode.id] = width + 1
       curNode = curNode.parent
     }
-    const {colIndex} = node
+    const { colIndex } = node
     const writeRowIndex = node.level + 1
     const writeColIndex = colIndex + 1 + rowLength
     const cell = worksheet.getCell(writeRowIndex, writeColIndex)
@@ -1315,12 +1356,12 @@ export async function exportGridPivot(instance: PivotSheet, chart: ChartObj) {
       value = metaMap[value].name
     }
     cell.value = value
-    cell.alignment = {vertical: 'middle', horizontal: 'center'}
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
     if (writeRowIndex < maxColHeight) {
       worksheet.mergeCells(writeRowIndex, writeColIndex, maxColHeight, writeColIndex)
     }
     cell.border = {
-      bottom: {style: 'thick', color: {argb: '00000000'}}
+      bottom: { style: 'thick', color: { argb: '00000000' } }
     }
   })
   const getNodeStartColIndex = (node: Node) => {
@@ -1342,7 +1383,7 @@ export async function exportGridPivot(instance: PivotSheet, chart: ChartObj) {
     const writeColIndex = colIndex + rowLength
     const cell = worksheet.getCell(writeRowIndex, writeColIndex)
     cell.value = value
-    cell.alignment = {vertical: 'middle', horizontal: 'center'}
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
     if (mergeRowCount > 1 || width > 1) {
       worksheet.mergeCells(
         writeRowIndex,
@@ -1352,17 +1393,222 @@ export async function exportGridPivot(instance: PivotSheet, chart: ChartObj) {
       )
     }
   })
+  const formatterMap = chart.yAxis.reduce((p, n) => {
+    if (n.dataeaseName) {
+      p[n.dataeaseName] = n.formatterCfg
+    }
+    return p
+  }, {})
   //  单元格数据
   for (let rowIndex = 0; rowIndex < rowLeafNodes.length; rowIndex++) {
     for (let colIndex = 0; colIndex < colLeafNodes.length; colIndex++) {
       const dataCellMeta = layoutResult.getCellMeta(rowIndex, colIndex)
-      const {fieldValue} = dataCellMeta
+      const { fieldValue } = dataCellMeta
       if (fieldValue === 0 || fieldValue) {
         const meta = metaMap[dataCellMeta.valueField]
         const cell = worksheet.getCell(rowIndex + maxColHeight + 1, rowLength + colIndex + 1)
-        const value = meta?.formatter?.(fieldValue) || fieldValue.toString()
-        cell.alignment = {vertical: 'middle', horizontal: 'center'}
-        cell.value = value
+        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+        const value = meta?.formatter?.(fieldValue) || fieldValue
+        if (typeof value === 'number') {
+          cell.value = value
+        } else if (typeof value === 'string') {
+          const formatterCfg = formatterMap?.[dataCellMeta.valueField]
+          const result = extractNumber(value, formatterCfg)
+          if (typeof result === 'string') {
+            cell.value = result
+          } else {
+            cell.value = result.value
+            cell.numFmt = result.numFmt
+          }
+        }
+      }
+    }
+  }
+  const buffer = await workbook.xlsx.writeBuffer()
+  const dataBlob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8'
+  })
+  saveAs(dataBlob, `${chart.title ?? '透视表'}.xlsx`)
+}
+
+export async function exportRowQuotaGridPivot(instance: PivotSheet, chart: ChartObj) {
+  const { layoutResult } = instance.facet
+  const { meta, fields } = instance.dataCfg
+  const rowLength = fields?.rows?.length || 0
+  const colLength = fields?.columns?.length || 0
+  const colNums = layoutResult.colLeafNodes.length + rowLength
+  if (colNums > 16384) {
+    ElMessage.warning(i18nt('chart.pivot_export_invalid_col_exceed'))
+    return
+  }
+  const workbook = new Exceljs.Workbook()
+  const worksheet = workbook.addWorksheet(i18nt('chart.chart_data'))
+  const metaMap: Record<string, Meta> = meta?.reduce((p, n) => {
+    if (n.field) {
+      p[n.field] = n
+    }
+    return p
+  }, {})
+  // 角头
+  if (colLength > 1) {
+    fields.columns.forEach((column: string, index) => {
+      if (index >= colLength - 1) {
+        return
+      }
+      const cell = worksheet.getCell(index + 1, 1)
+      cell.value = metaMap[column]?.name ?? column
+      cell.alignment = { vertical: 'middle', horizontal: 'center' }
+      cell.border = {
+        right: { style: 'thick', color: { argb: '00000000' } }
+      }
+      worksheet.mergeCells(index + 1, 1, index + 1, rowLength + 1)
+    })
+  }
+  fields?.rows?.forEach((row, index) => {
+    const cell = worksheet.getCell(colLength === 0 ? 1 : colLength, index + 1)
+    cell.value = metaMap[row]?.name ?? row
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    cell.border = { bottom: { style: 'thick', color: { argb: '00000000' } } }
+  })
+  const quotaColLabel = chart.customAttr.basicStyle.quotaColLabel ?? t('dataset.value')
+  const quotaColHeadCell = worksheet.getCell(colLength === 0 ? 1 : colLength, rowLength + 1)
+  quotaColHeadCell.value = quotaColLabel
+  quotaColHeadCell.alignment = { vertical: 'middle', horizontal: 'center' }
+  quotaColHeadCell.border = {
+    bottom: { style: 'thick', color: { argb: '00000000' } },
+    right: { style: 'thick', color: { argb: '00000000' } }
+  }
+  // 行头
+  const { rowLeafNodes, rowNodes } = layoutResult
+  const notLeafNodeHeightMap: Record<string, number> = {}
+  rowLeafNodes.forEach(node => {
+    // 行头的高度由子节点相加决定，也就是行头子节点中包含的叶子节点数量
+    let curNode = node.parent
+    while (curNode) {
+      const height = notLeafNodeHeightMap[curNode.id] ?? 0
+      notLeafNodeHeightMap[curNode.id] = height + 1
+      curNode = curNode.parent
+    }
+    const { rowIndex } = node
+    const writeRowIndex = rowIndex + 2 + (colLength === 0 ? 1 : colLength - 1)
+    const writeColIndex = node.level + 1
+    const cell = worksheet.getCell(writeRowIndex, writeColIndex)
+    let value = node.label
+    if (node.field === '$$extra$$' && metaMap[value]?.name) {
+      value = metaMap[value].name
+    }
+    cell.value = value
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    cell.border = {
+      right: { style: 'thick', color: { argb: '00000000' } }
+    }
+  })
+
+  const getNodeStartRowIndex = (node: Node) => {
+    if (!node.children?.length) {
+      return node.rowIndex + 1
+    } else {
+      return getNodeStartRowIndex(node.children[0])
+    }
+  }
+  rowNodes?.forEach(node => {
+    if (node.isLeaf) {
+      return
+    }
+    const rowIndex = getNodeStartRowIndex(node)
+    const height = notLeafNodeHeightMap[node.id]
+    const writeRowIndex = rowIndex + 1 + (colLength === 0 ? 1 : colLength - 1)
+    const mergeColCount = node.children[0].level - node.level
+    const cell = worksheet.getCell(writeRowIndex, node.level + 1)
+    cell.value = node.label
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    if (mergeColCount > 1 || height > 1) {
+      worksheet.mergeCells(
+        writeRowIndex,
+        node.level + 1,
+        writeRowIndex + height - 1,
+        node.level + mergeColCount
+      )
+    }
+  })
+
+  // 列头
+  const { colLeafNodes, colNodes, colsHierarchy } = layoutResult
+  const maxColHeight = colsHierarchy.maxLevel + 1
+  const notLeafNodeWidthMap: Record<string, number> = {}
+  colLeafNodes.forEach(node => {
+    // 列头的宽度由子节点相加决定，也就是列头子节点中包含的叶子节点数量
+    let curNode = node.parent
+    while (curNode) {
+      const width = notLeafNodeWidthMap[curNode.id] ?? 0
+      notLeafNodeWidthMap[curNode.id] = width + 1
+      curNode = curNode.parent
+    }
+    const { colIndex } = node
+    const writeRowIndex = node.level + 1
+    const writeColIndex = colIndex + rowLength + 2
+    const cell = worksheet.getCell(writeRowIndex, writeColIndex)
+    const value = node.label
+    cell.value = value
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    if (writeRowIndex < maxColHeight) {
+      worksheet.mergeCells(writeRowIndex, writeColIndex, maxColHeight, writeColIndex)
+    }
+    cell.border = {
+      bottom: { style: 'thick', color: { argb: '00000000' } }
+    }
+  })
+  const getNodeStartColIndex = (node: Node) => {
+    if (!node.children?.length) {
+      return node.colIndex + 1
+    } else {
+      return getNodeStartColIndex(node.children[0])
+    }
+  }
+  colNodes.forEach(node => {
+    if (node.isLeaf) {
+      return
+    }
+    const colIndex = getNodeStartColIndex(node)
+    const width = notLeafNodeWidthMap[node.id]
+    const writeRowIndex = node.level + 1
+    const value = node.label
+    const writeColIndex = colIndex + rowLength + 1
+    const cell = worksheet.getCell(writeRowIndex, writeColIndex)
+    cell.value = value
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    if (width > 1) {
+      worksheet.mergeCells(writeRowIndex, writeColIndex, writeRowIndex, writeColIndex + width - 1)
+    }
+  })
+  const formatterMap = chart.yAxis.reduce((p, n) => {
+    if (n.dataeaseName) {
+      p[n.dataeaseName] = n.formatterCfg
+    }
+    return p
+  }, {})
+  //  单元格数据
+  for (let rowIndex = 0; rowIndex < rowLeafNodes.length; rowIndex++) {
+    for (let colIndex = 0; colIndex < colLeafNodes.length; colIndex++) {
+      const dataCellMeta = layoutResult.getCellMeta(rowIndex, colIndex)
+      const { fieldValue } = dataCellMeta
+      if (fieldValue === 0 || fieldValue) {
+        const meta = metaMap[dataCellMeta.valueField]
+        const cell = worksheet.getCell(rowIndex + maxColHeight + 1, rowLength + colIndex + 2)
+        const value = meta?.formatter?.(fieldValue) || fieldValue
+        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+        if (typeof value === 'number') {
+          cell.value = value
+        } else if (typeof value === 'string') {
+          const formatterCfg = formatterMap?.[dataCellMeta.valueField]
+          const result = extractNumber(value, formatterCfg)
+          if (typeof result === 'string') {
+            cell.value = result
+          } else {
+            cell.value = result.value
+            cell.numFmt = result.numFmt
+          }
+        }
       }
     }
   }
@@ -1375,11 +1621,11 @@ export async function exportGridPivot(instance: PivotSheet, chart: ChartObj) {
 
 export async function exportTreePivot(instance: PivotSheet, chart: ChartObj) {
   const layoutResult = instance.facet.layoutResult
-  if (layoutResult.colLeafNodes.length + 2 > 16384) {
+  if (layoutResult.colLeafNodes.length + 1 > 16384) {
     ElMessage.warning(i18nt('chart.pivot_export_invalid_col_exceed'))
     return
   }
-  const {meta, fields} = instance.dataCfg
+  const { meta, fields } = instance.dataCfg
   const colLength = fields?.columns?.length || 0
   const workbook = new Exceljs.Workbook()
   const worksheet = workbook.addWorksheet(i18nt('chart.chart_data'))
@@ -1394,33 +1640,33 @@ export async function exportTreePivot(instance: PivotSheet, chart: ChartObj) {
   fields.columns?.forEach((column, index) => {
     const cell = worksheet.getCell(index + 1, 1)
     cell.value = metaMap[column]?.name ?? column
-    cell.alignment = {vertical: 'middle', horizontal: 'center'}
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
     cell.border = {
-      right: {style: 'thick', color: {argb: '00000000'}}
+      right: { style: 'thick', color: { argb: '00000000' } }
     }
   })
   const maxColHeight = layoutResult.colsHierarchy.maxLevel + 1
   const rowName = fields?.rows?.map(row => metaMap[row]?.name ?? row).join('/')
   const cell = worksheet.getCell(colLength + 1, 1)
   cell.value = rowName
-  cell.alignment = {vertical: 'middle', horizontal: 'center'}
+  cell.alignment = { vertical: 'middle', horizontal: 'center' }
   cell.border = {
-    right: {style: 'thick', color: {argb: '00000000'}},
-    bottom: {style: 'thick', color: {argb: '00000000'}}
+    right: { style: 'thick', color: { argb: '00000000' } },
+    bottom: { style: 'thick', color: { argb: '00000000' } }
   }
   //行头
-  const {rowLeafNodes} = layoutResult
+  const { rowLeafNodes } = layoutResult
   rowLeafNodes.forEach((node, index) => {
     const cell = worksheet.getCell(maxColHeight + index + 1, 1)
     cell.value = repeat('  ', node.level) + node.label
-    cell.alignment = {vertical: 'middle', horizontal: 'left'}
+    cell.alignment = { vertical: 'middle', horizontal: 'left' }
     cell.border = {
-      right: {style: 'thick', color: {argb: '00000000'}}
+      right: { style: 'thick', color: { argb: '00000000' } }
     }
   })
   // 列头
   const notLeafNodeWidthMap: Record<string, number> = {}
-  const {colLeafNodes} = layoutResult
+  const { colLeafNodes } = layoutResult
   colLeafNodes.forEach(node => {
     let curNode = node.parent
     while (curNode) {
@@ -1428,7 +1674,7 @@ export async function exportTreePivot(instance: PivotSheet, chart: ChartObj) {
       notLeafNodeWidthMap[curNode.id] = width + 1
       curNode = curNode.parent
     }
-    const {colIndex} = node
+    const { colIndex } = node
     const writeRowIndex = node.level + 1
     const writeColIndex = colIndex + 1 + 1
     const cell = worksheet.getCell(writeRowIndex, writeColIndex)
@@ -1437,12 +1683,12 @@ export async function exportTreePivot(instance: PivotSheet, chart: ChartObj) {
       value = metaMap[value].name
     }
     cell.value = value
-    cell.alignment = {vertical: 'middle', horizontal: 'center'}
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
     if (writeRowIndex < maxColHeight) {
       worksheet.mergeCells(writeRowIndex, writeColIndex, maxColHeight, writeColIndex)
     }
     cell.border = {
-      bottom: {style: 'thick', color: {argb: '00000000'}}
+      bottom: { style: 'thick', color: { argb: '00000000' } }
     }
   })
   const colNodes = layoutResult.colNodes
@@ -1464,7 +1710,7 @@ export async function exportTreePivot(instance: PivotSheet, chart: ChartObj) {
     const writeColIndex = colIndex + 1
     const cell = worksheet.getCell(writeRowIndex, writeColIndex)
     cell.value = node.label
-    cell.alignment = {vertical: 'middle', horizontal: 'center'}
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
     if (mergeRowCount > 1 || width > 1) {
       worksheet.mergeCells(
         writeRowIndex,
@@ -1474,17 +1720,34 @@ export async function exportTreePivot(instance: PivotSheet, chart: ChartObj) {
       )
     }
   })
+  const formatterMap = chart.yAxis.reduce((p, n) => {
+    if (n.dataeaseName) {
+      p[n.dataeaseName] = n.formatterCfg
+    }
+    return p
+  }, {})
   //  单元格数据
   for (let rowIndex = 0; rowIndex < rowLeafNodes.length; rowIndex++) {
     for (let colIndex = 0; colIndex < colLeafNodes.length; colIndex++) {
       const dataCellMeta = layoutResult.getCellMeta(rowIndex, colIndex)
-      const {fieldValue} = dataCellMeta
+      const { fieldValue } = dataCellMeta
       if (fieldValue === 0 || fieldValue) {
         const meta = metaMap[dataCellMeta.valueField]
         const cell = worksheet.getCell(rowIndex + maxColHeight + 1, colIndex + 1 + 1)
-        const value = meta?.formatter?.(fieldValue) || fieldValue.toString()
-        cell.alignment = {vertical: 'middle', horizontal: 'center'}
-        cell.value = value
+        const value = meta?.formatter?.(fieldValue) || fieldValue
+        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+        if (typeof value === 'number') {
+          cell.value = value
+        } else if (typeof value === 'string') {
+          const formatterCfg = formatterMap?.[dataCellMeta.valueField]
+          const result = extractNumber(value, formatterCfg)
+          if (typeof result === 'string') {
+            cell.value = result
+          } else {
+            cell.value = result.value
+            cell.numFmt = result.numFmt
+          }
+        }
       }
     }
   }
@@ -1495,24 +1758,289 @@ export async function exportTreePivot(instance: PivotSheet, chart: ChartObj) {
   saveAs(dataBlob, `${chart.title ?? '透视表'}.xlsx`)
 }
 
+export async function exportRowQuotaTreePivot(instance: PivotSheet, chart: ChartObj) {
+  const layoutResult = instance.facet.layoutResult
+  if (layoutResult.colLeafNodes.length + 1 > 16384) {
+    ElMessage.warning(i18nt('chart.pivot_export_invalid_col_exceed'))
+    return
+  }
+  const { meta, fields } = instance.dataCfg
+  const colLength = fields?.columns?.length || 0
+  const workbook = new Exceljs.Workbook()
+  const worksheet = workbook.addWorksheet(i18nt('chart.chart_data'))
+  const metaMap: Record<string, Meta> = meta?.reduce((p, n) => {
+    if (n.field) {
+      p[n.field] = n
+    }
+    return p
+  }, {})
+
+  // 角头
+  fields.columns?.forEach((column, index) => {
+    if (index >= fields.columns.length - 1) {
+      return
+    }
+    const cell = worksheet.getCell(index + 1, 1)
+    cell.value = metaMap[column]?.name ?? column
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    cell.border = {
+      right: { style: 'thick', color: { argb: '00000000' } }
+    }
+  })
+  const quotaColLabel = chart.customAttr.basicStyle.quotaColLabel ?? t('dataset.value')
+  const maxColHeight = layoutResult.colsHierarchy.maxLevel + 1
+  const rowName = fields?.rows
+    ?.map(row => metaMap[row]?.name ?? row)
+    .concat(quotaColLabel)
+    .join('/')
+  const cell = worksheet.getCell(colLength, 1)
+  cell.value = rowName
+  cell.alignment = { vertical: 'middle', horizontal: 'center' }
+  cell.border = {
+    right: { style: 'thick', color: { argb: '00000000' } },
+    bottom: { style: 'thick', color: { argb: '00000000' } }
+  }
+  //行头
+  const { rowLeafNodes } = layoutResult
+  rowLeafNodes.forEach((node, index) => {
+    const cell = worksheet.getCell(maxColHeight + index + 1, 1)
+    let value = node.label
+    if (node.field === '$$extra$$' && metaMap[value]?.name) {
+      value = metaMap[value].name
+    }
+    cell.value = repeat('  ', node.level) + value
+    cell.alignment = { vertical: 'middle', horizontal: 'left' }
+    cell.border = {
+      right: { style: 'thick', color: { argb: '00000000' } }
+    }
+  })
+  // 列头
+  const notLeafNodeWidthMap: Record<string, number> = {}
+  const { colLeafNodes } = layoutResult
+  colLeafNodes.forEach(node => {
+    let curNode = node.parent
+    while (curNode) {
+      const width = notLeafNodeWidthMap[curNode.id] ?? 0
+      notLeafNodeWidthMap[curNode.id] = width + 1
+      curNode = curNode.parent
+    }
+    const { colIndex } = node
+    const writeRowIndex = node.level + 1
+    const writeColIndex = colIndex + 2
+    const cell = worksheet.getCell(writeRowIndex, writeColIndex)
+    cell.value = node.label
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    if (writeRowIndex < maxColHeight) {
+      worksheet.mergeCells(writeRowIndex, writeColIndex, maxColHeight, writeColIndex)
+    }
+    cell.border = {
+      bottom: { style: 'thick', color: { argb: '00000000' } }
+    }
+  })
+  const colNodes = layoutResult.colNodes
+  const getNodeStartIndex = (node: Node) => {
+    if (!node.children?.length) {
+      return node.colIndex + 1
+    } else {
+      return getNodeStartIndex(node.children[0])
+    }
+  }
+  colNodes.forEach(node => {
+    if (node.isLeaf) {
+      return
+    }
+    const colIndex = getNodeStartIndex(node)
+    const width = notLeafNodeWidthMap[node.id]
+    const writeRowIndex = node.level + 1
+    const writeColIndex = colIndex + 1
+    const cell = worksheet.getCell(writeRowIndex, writeColIndex)
+    cell.value = node.label
+    cell.alignment = { vertical: 'middle', horizontal: 'center' }
+    if (width > 1) {
+      worksheet.mergeCells(writeRowIndex, writeColIndex, writeRowIndex, writeColIndex + width - 1)
+    }
+  })
+  const formatterMap = chart.yAxis.reduce((p, n) => {
+    if (n.dataeaseName) {
+      p[n.dataeaseName] = n.formatterCfg
+    }
+    return p
+  }, {})
+  //  单元格数据
+  for (let rowIndex = 0; rowIndex < rowLeafNodes.length; rowIndex++) {
+    for (let colIndex = 0; colIndex < colLeafNodes.length; colIndex++) {
+      const dataCellMeta = layoutResult.getCellMeta(rowIndex, colIndex)
+      const { fieldValue } = dataCellMeta
+      if (fieldValue === 0 || fieldValue) {
+        const meta = metaMap[dataCellMeta.valueField]
+        const cell = worksheet.getCell(rowIndex + maxColHeight + 1, colIndex + 2)
+        const value = meta?.formatter?.(fieldValue) || fieldValue
+        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+        if (typeof value === 'number') {
+          cell.value = value
+        } else if (typeof value === 'string') {
+          const formatterCfg = formatterMap?.[dataCellMeta.valueField]
+          const result = extractNumber(value, formatterCfg)
+          if (typeof result === 'string') {
+            cell.value = result
+          } else {
+            cell.value = result.value
+            cell.numFmt = result.numFmt
+          }
+        }
+      }
+    }
+  }
+  const buffer = await workbook.xlsx.writeBuffer()
+  const dataBlob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8'
+  })
+  saveAs(dataBlob, `${chart.title ?? '透视表'}.xlsx`)
+}
+
+function extractNumber(
+  formattedValue: string,
+  formatterCfg: BaseFormatter
+):
+  | {
+      value: number
+      numFmt: string
+    }
+  | string {
+  if (!formatterCfg) {
+    return formattedValue
+  }
+  let result = formattedValue
+  if (formatterCfg.type === 'percent') {
+    result = result.slice(0, -1) // 去掉百分号
+    if (formatterCfg.thousandSeparator) {
+      result = result.replace(/,/g, '')
+    }
+    //科学计数法
+    if (result.includes('e')) {
+      const valueArr = result.match(/^[+-]?\d+(\.\d+)?(e[+-]?\d+)?/)
+      if (!valueArr?.length) {
+        return formattedValue
+      }
+      const valueStr = valueArr[0]
+      const value = parseFloat(valueStr)
+      let numFmt = '0.'
+      const number = valueStr.split('e')[0]
+      numFmt += '0'.repeat(number.slice(1).length)
+      numFmt += 'E+0"%"'
+      return {
+        value,
+        numFmt
+      }
+    }
+    const value = parseFloat(result)
+    let numFmt = '#'
+    if (formatterCfg.thousandSeparator) {
+      numFmt += ',#'
+    }
+    if (Math.abs(value) < 1) {
+      numFmt = '0'
+    }
+    if (formatterCfg.decimalCount > 0) {
+      numFmt += `.${'0'.repeat(formatterCfg.decimalCount)}`
+    }
+    numFmt += '"%"'
+    return {
+      value,
+      numFmt
+    }
+  }
+  if (formatterCfg.suffix) {
+    const suffix = formatterCfg.suffix
+    if (result.endsWith(suffix)) {
+      result = result.slice(0, -suffix.length)
+    }
+  }
+  if (formatterCfg.thousandSeparator) {
+    result = result.replace(/,/g, '')
+  }
+  //科学计数法
+  if (result.includes('e')) {
+    const valueArr = result.match(/^[+-]?\d+(\.\d+)?(e[+-]?\d+)?/)
+    if (!valueArr?.length) {
+      return formattedValue
+    }
+    const valueStr = valueArr[0]
+    const value = parseFloat(valueStr)
+    let numFmt = '0.'
+    const number = valueStr.split('e')[0]
+    numFmt += '0'.repeat(number.slice(1).length)
+    numFmt += 'E+0'
+    const suffix = formattedValue.slice(valueStr.length)
+    if (suffix) {
+      numFmt += `"${suffix}"`
+    }
+    return {
+      value,
+      numFmt
+    }
+  }
+  const valueArr = result.match(/^[+-]?\d+(\.\d+)?/)
+  if (!valueArr?.length) {
+    return formattedValue
+  }
+  const valueStr = valueArr[0]
+  const value = parseFloat(valueStr)
+  const unit = result.slice(valueStr.length)
+  let numFmt = '#'
+  if (formatterCfg.thousandSeparator) {
+    numFmt += ',#'
+  }
+  if (Math.abs(value) < 1) {
+    numFmt = '0'
+  }
+  if (formatterCfg.type === 'value') {
+    if (formatterCfg.decimalCount > 0) {
+      numFmt += `.${'0'.repeat(formatterCfg.decimalCount)}`
+    }
+  } else {
+    if (valueStr.indexOf('.') > -1) {
+      const decimalLength = valueStr.split('.')[1].length
+      numFmt += `.${'0'.repeat(decimalLength)}`
+    }
+  }
+  if (unit) {
+    numFmt += `"${unit}"`
+  }
+  numFmt += `"${formatterCfg.suffix}"`
+  return {
+    value,
+    numFmt
+  }
+}
+
 export async function exportPivotExcel(instance: PivotSheet, chart: ChartObj) {
-  const {fields} = instance.dataCfg
+  const { fields } = instance.dataCfg
   const rowLength = fields?.rows?.length || 0
   const valueLength = fields?.values?.length || 0
   if (!(rowLength && valueLength)) {
     ElMessage.warning(i18nt('chart.pivot_export_invalid_field'))
     return
   }
+  const { quotaPosition } = chart.customAttr.basicStyle
   if (chart.customAttr.basicStyle.tableLayoutMode !== 'tree') {
-    exportGridPivot(instance, chart)
+    if (quotaPosition === 'row') {
+      exportRowQuotaGridPivot(instance, chart)
+    } else {
+      exportGridPivot(instance, chart)
+    }
   } else {
-    exportTreePivot(instance, chart)
+    if (quotaPosition === 'row') {
+      exportRowQuotaTreePivot(instance, chart)
+    } else {
+      exportTreePivot(instance, chart)
+    }
   }
 }
 
 export function configMergeCells(chart: Chart, options: S2Options, dataConfig: S2DataConfig) {
-  const {mergeCells} = parseJson(chart.customAttr).tableCell
-  const {showIndex} = parseJson(chart.customAttr).tableHeader
+  const { mergeCells } = parseJson(chart.customAttr).tableCell
+  const { showIndex } = parseJson(chart.customAttr).tableHeader
   if (mergeCells) {
     options.frozenColCount = 0
     options.frozenRowCount = 0
@@ -1620,7 +2148,7 @@ class CustomMergedCell extends MergedCell {
     const allPoints = getPolygonPoints(this.cells)
     // 处理条件样式，这里没有用透明度
     // 因为合并的单元格是单独的图层，透明度降低的话会显示底下未合并的单元格，需要单独处理被覆盖的单元格
-    const {backgroundColor: fill, backgroundColorOpacity: fillOpacity} = this.getBackgroundColor()
+    const { backgroundColor: fill } = this.getBackgroundColor()
     const cellTheme = this.theme.dataCell.cell
     this.backgroundShape = renderPolygon(this, {
       points: allPoints,
@@ -1654,11 +2182,25 @@ export class CustomDataCell extends TableDataCell {
     })
   }
 
+  public getBackgroundColor() {
+    let bgColorInfo = super.getBackgroundColor()
+    if (this.meta.isMergedCell) {
+      bgColorInfo = {
+        ...bgColorInfo,
+        backgroundColorOpacity: 0
+      }
+    }
+    return bgColorInfo
+  }
+
   /**
    * 重写绘制文本内容的方法
    * @protected
    */
   protected drawTextShape() {
+    if(this.meta.isMergedCell) {
+      return
+    }
     if (this.meta.autoWrap) {
       drawTextShape(this, false)
     } else {
@@ -1694,11 +2236,11 @@ const drawTextShape = (cell, isHeader) => {
   // 用户配置的最大行数
   const maxLines = cell.meta.maxLines ?? 1
   const {
-    options: {placeholder}
+    options: { placeholder }
   } = cell.spreadsheet
   const emptyPlaceholder = getEmptyPlaceholder(this, placeholder)
   // 单元格文本
-  const {formattedValue} = cell.getFormattedFieldValue()
+  const { formattedValue } = cell.getFormattedFieldValue()
   // 获取文本样式
   const textStyle = cell.getTextStyle()
   // 宽度能放几个字符，就放几个，放不下就换行
@@ -1756,9 +2298,9 @@ const drawTextShape = (cell, isHeader) => {
   cell.actualTextWidth = cell.spreadsheet.measureTextWidth(wrapText, textStyle)
 
   // 获取文本位置并渲染文本
-  const position = cell.getTextPosition()
+  const { x, y } = cell.getTextAndIconPosition()?.text || cell.getTextPosition()
   // 绘制文本
-  cell.textShape = renderText(cell, [cell.textShape], position.x, position.y, wrapText, textStyle, {
+  cell.textShape = renderText(cell, [cell.textShape], x, y, wrapText, textStyle, {
     fontSize: extraStyleFontSize
   })
 
@@ -1778,7 +2320,7 @@ export const calculateHeaderHeight = (info, newChart, tableHeader, basicStyle, l
   if (tableHeader.showTableHeader === false) return
   const ev = layoutResult || newChart.facet.layoutResult
   const maxLines = basicStyle.maxLines ?? 1
-  const textStyle = {...newChart.theme.cornerCell.text}
+  const textStyle = { ...newChart.theme.cornerCell.text }
   const sourceText = info.info.meta.value
   let maxHeight = getWrapTextHeight(
     getWrapText(sourceText, textStyle, info.info.resizedWidth, ev.spreadsheet),
@@ -1799,10 +2341,10 @@ export const calculateHeaderHeight = (info, newChart, tableHeader, basicStyle, l
           maxLines
         )
         return wrapTextHeight > maxHeightNode.height
-          ? {height: wrapTextHeight, colIndex: currentNode.colIndex}
+          ? { height: wrapTextHeight, colIndex: currentNode.colIndex }
           : maxHeightNode
       },
-      {height: 0}
+      { height: 0 }
     )
 
   // 使用最大高度
@@ -1813,8 +2355,6 @@ export const calculateHeaderHeight = (info, newChart, tableHeader, basicStyle, l
     ev.colLeafNodes.forEach(n => (n.height = maxHeight))
     ev.colsHierarchy.height = maxHeight
   }
-
-  newChart.store.set('autoCalcHeight', maxHeight)
 }
 
 /**
@@ -1872,17 +2412,18 @@ const getWrapTextHeight = (wrapText, textStyle, spreadsheet, maxLines) => {
   return Math.min(lines, maxLines) * maxHeight
 }
 
-export function getSummaryRow(data, axis, sumCon = []) {
+// 导出获取汇总行的函数
+export function getSummaryRow(data, axis, sumCon = [], customSumResult = {}) {
   const summaryObj = { SUMMARY: true }
   for (let i = 0; i < axis.length; i++) {
     const a = axis[i].dataeaseName
     let savedAxis = find(sumCon, s => s.field === a)
     if (savedAxis) {
       if (savedAxis.summary == undefined) {
-        savedAxis.summary = 'sum'
+        savedAxis.summary = 'sum' // 默认汇总方式为求和
       }
       if (savedAxis.show == undefined) {
-        savedAxis.show = true
+        savedAxis.show = true // 默认显示汇总结果
       }
     } else {
       savedAxis = {
@@ -1891,74 +2432,79 @@ export function getSummaryRow(data, axis, sumCon = []) {
         show: true
       }
     }
+    // 如果配置为不显示，则跳过该字段
     if (!savedAxis.show) {
       continue
     }
+    // 根据汇总方式处理数据
     switch (savedAxis.summary) {
       case 'sum':
-        summaryObj[a] = sumBy(data, d => parseFloat(d[a]) || 0)
+        // 计算字段的总和
+        summaryObj[a] = safeDecimalSum(data, a)
         break
       case 'avg':
-        summaryObj[a] = meanBy(data, d => parseFloat(d[a]) || 0)
+        // 计算字段的平均值
+        summaryObj[a] = safeDecimalMean(data, a)
         break
       case 'max':
+        // 计算字段的最大值
         summaryObj[a] = maxBy(
           filter(data, d => parseFloat(d[a]) !== undefined),
-          d => parseFloat(d[a])
+          d => parseFloat(d[a]) // 提取数值
         )[a]
         break
       case 'min':
+        // 计算字段的最小值
         summaryObj[a] = minBy(
           filter(data, d => parseFloat(d[a]) !== undefined),
-          d => parseFloat(d[a])
+          d => parseFloat(d[a]) // 提取数值
         )[a]
         break
-      case 'var_pop': //方差
+      case 'var_pop':
+        // 计算总体方差（需要至少2个数据点）
         if (data.length < 2) {
           continue
         } else {
-          const mean = meanBy(data, d => parseFloat(d[a]) || 0) // 计算均值
-          const squaredDeviations = map(data, d => ((parseFloat(d[a]) || 0) - mean) ** 2) // 计算偏差平方
-          summaryObj[a] = sum(squaredDeviations) / (size(data) - 1) // 样本方差（分母n-1）
+          const mean = safeDecimalMean(data, a) // 计算平均值
+          // 计算每个数据点与平均值的差的平方
+          const squaredDeviations = map(data, d => {
+            const value = new Decimal(d[a] ?? 0) // 获取字段值，如果不存在则使用0
+            const dev = value.minus(mean) // 计算差值
+            return dev.times(dev) // 计算平方
+          })
+          // 计算方差（平方差的平均值）
+          const variance = squaredDeviations.reduce((acc, val) => acc.plus(val), new Decimal(0))
+          summaryObj[a] = variance.dividedBy(data.length - 1).toNumber() // 计算总体方差
         }
         break
-      case 'stddev_pop': //标准差
+      case 'stddev_pop':
+        // 计算总体标准差（需要至少2个数据点）
         if (data.length < 2) {
           continue
         } else {
-          const mean = meanBy(data, d => parseFloat(d[a]) || 0) // 计算均值
-          const squaredDeviations = map(data, d => ((parseFloat(d[a]) || 0) - mean) ** 2) // 计算偏差平方
-          const sampleVariance = sum(squaredDeviations) / (size(data) - 1) // 样本方差（分母n-1）
-          summaryObj[a] = Math.sqrt(sampleVariance) // 样本标准差
+          const mean = safeDecimalMean(data, a) // 计算平均值
+          // 计算每个数据点与平均值的差的平方
+          const squaredDeviations = map(data, d => {
+            const value = new Decimal(d[a] ?? 0) // 获取字段值，如果不存在则使用0
+            const dev = value.minus(mean) // 计算差值
+            return dev.times(dev) // 计算平方
+          })
+          // 计算方差（平方差的平均值）
+          const variance = squaredDeviations.reduce((acc, val) => acc.plus(val), new Decimal(0))
+          summaryObj[a] = variance
+            .dividedBy(data.length - 1)
+            .sqrt()
+            .toNumber() // 计算总体标准差
         }
+        break
+      case 'custom':
+        summaryObj[a] = customSumResult[a]
         break
     }
   }
-  return summaryObj
-}
 
-/**
- * 汇总行样式,紧贴在单元格后面
- * @param newChart
- * @param newData
- * @param tableCell
- * @param tableHeader
- * @param showSummary
- */
-export const summaryRowStyle = (newChart, newData, tableCell, tableHeader, showSummary) => {
-  if (!showSummary || !newData.length) return
-  newChart.on(S2Event.LAYOUT_BEFORE_RENDER, () => {
-    const showHeader = tableHeader.showTableHeader === true
-    // 不显示表头时，减少一个表头的高度
-    const headerAndSummaryHeight = showHeader ? 2 : 1
-    const totalHeight =
-      tableHeader.tableTitleHeight * headerAndSummaryHeight +
-      tableCell.tableItemHeight * (newData.length - 1)
-    if (totalHeight < newChart.container.cfg.height) {
-      newChart.options.height =
-        totalHeight < newChart.container.cfg.height - 8 ? totalHeight + 8 : totalHeight
-    }
-  })
+  // 返回汇总结果对象
+  return summaryObj
 }
 
 export class SummaryCell extends CustomDataCell {
@@ -1969,8 +2515,8 @@ export class SummaryCell extends CustomDataCell {
   }
 
   getBackgroundColor() {
-    const {backgroundColor, backgroundColorOpacity} = this.theme.colCell.cell
-    return {backgroundColor, backgroundColorOpacity}
+    const { backgroundColor, backgroundColorOpacity } = this.theme.colCell.cell
+    return { backgroundColor, backgroundColorOpacity }
   }
 }
 
@@ -2046,12 +2592,12 @@ export const getColumns = (fields, cols: Array<ColumnNode>) => {
 
 export function drawImage() {
   const img = new Image()
-  const {x, y, width, height, fieldValue} = this.meta
+  const { x, y, width, height, fieldValue } = this.meta
   img.src = fieldValue as string
   img.setAttribute('crossOrigin', 'anonymous')
   img.onload = () => {
     !this.cfg.children && (this.cfg.children = [])
-    const {width: imgWidth, height: imgHeight} = img
+    const { width: imgWidth, height: imgHeight } = img
     const ratio = Math.max(imgWidth / width, imgHeight / height)
     // 不铺满，部分留白
     const imgShowWidth = (imgWidth / ratio) * 0.8
@@ -2066,4 +2612,170 @@ export function drawImage() {
       }
     })
   }
+}
+
+export function calcTreeWidth(node) {
+  if (!node.children?.length) {
+    return node.width
+  }
+  return node.children.reduce((pre, cur) => {
+    return pre + calcTreeWidth(cur)
+  }, 0)
+}
+
+export function getStartPosition(node) {
+  if (!node.children?.length) {
+    return node.x
+  }
+  return getStartPosition(node.children[0])
+}
+
+function getMaxTreeDepth(nodes) {
+  if (!nodes?.length) {
+    return 0
+  }
+  return Math.max(
+    ...nodes.map(node => {
+      if (!node.children?.length) {
+        return 1
+      }
+      return getMaxTreeDepth(node.children) + 1
+    })
+  )
+}
+
+export function summaryRowStyle(newChart, newData, tableCell, tableHeader, showSummary) {
+  if (!showSummary || !newData.length) return
+  const columns = newChart.dataCfg.fields.columns
+  const showHeader = tableHeader.showTableHeader === true
+  // 不显示表头时，减少一个表头的高度
+  const headerAndSummaryHeight = showHeader ? getMaxTreeDepth(columns) + 1 : 1
+  newChart.on(S2Event.LAYOUT_BEFORE_RENDER, () => {
+    const totalHeight =
+      tableHeader.tableTitleHeight * headerAndSummaryHeight +
+      tableCell.tableItemHeight * (newData.length - 1)
+    if (totalHeight < newChart.container.cfg.height) {
+      newChart.options.height =
+        totalHeight < newChart.container.cfg.height - 8 ? totalHeight + 8 : totalHeight
+    }
+  })
+}
+
+/**
+ * 计算分组表头高度
+ * @param newChart
+ * @param tableHeader
+ * @param basicStyle
+ */
+export const calculateGroupHeaderHeight = (newChart, tableHeader, basicStyle) => {
+  let maxGroupHeight = 0
+  // 获取分组名字最长的列
+  const maxNameMeta = newChart.dataCfg?.meta
+    ?.filter(item => !item.field.startsWith('f_'))
+    ?.reduce((max, cur) => (cur.name.length > (max?.name.length ?? 0) ? cur : max), null)
+  if (maxNameMeta) {
+    let colWidth = basicStyle.tableColumnWidth
+    const maxNameColumn = findNodeByKey(newChart.dataCfg.fields.columns, maxNameMeta.field)
+    const maxNameColumns = []
+    if (maxNameColumn) {
+      maxNameColumns.push(maxNameColumn)
+    }
+    const { resizedWidth, meta } = newChart.store.get('resizeColWidthInfo') || {
+      resizedWidth: 0,
+      width: 0
+    }
+    const leafKeys = getLeafKeys(maxNameColumns)
+    if (basicStyle.tableFieldWidth.length > 0) {
+      colWidth = 0
+      const fieldWidth = basicStyle.tableFieldWidth
+      // fieldWidth中对象的key在leafKeys时，对fieldWidth中对象的width求和
+      fieldWidth.forEach(fw => {
+        // 调整单元格宽度时，排除掉当前调整的列，使用调整后的宽度
+        if (
+          leafKeys.filter(key => meta?.key !== key).includes(fw.fieldId) &&
+          isNumber(fw.width) &&
+          fw.width > 0
+        ) {
+          colWidth += fw.width
+        }
+      })
+    }
+    if (basicStyle.tableColumnMode === 'custom') {
+      colWidth = basicStyle.tableColumnWidth * (leafKeys.length === 0 ? 1 : leafKeys.length) || 100
+    } else {
+      colWidth =
+        (newChart.facet?.cfg?.width ? newChart.facet.cfg.width : newChart.options.width) *
+        (colWidth / 100)
+    }
+    // 计算分组表头的高度
+    if (colWidth > 0) {
+      colWidth = colWidth + resizedWidth
+      const nodeHeight = calculateGroupHeaderMaxTextHeight(
+        { info: { name: maxNameMeta.name, resizedWidth: colWidth } },
+        newChart,
+        tableHeader,
+        basicStyle,
+        null
+      )
+      maxGroupHeight = Math.max(maxGroupHeight, nodeHeight)
+    }
+    if (maxGroupHeight > 0) {
+      newChart.options.style.colCfg.height = maxGroupHeight
+    }
+  }
+}
+
+// 获取最里层的叶子节点
+const getLeafKeys = (columns: any[]): string[] => {
+  const keys: string[] = []
+  columns.forEach(col => {
+    if (col && typeof col === 'object' && Array.isArray(col.children) && col.children.length > 0) {
+      keys.push(...getLeafKeys(col.children))
+    } else if (col && typeof col === 'object' && col.key) {
+      keys.push(col.key)
+    }
+  })
+  return keys
+}
+// 根据 key 查找节点
+const findNodeByKey = (columns: any[], key: string): any | null => {
+  for (const col of columns) {
+    if (col.key === key) return col
+    if (col.children) {
+      const found = findNodeByKey(col.children, key)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+/**
+ * 计算分组表头最大文本高度
+ * @param info
+ * @param newChart
+ * @param tableHeader
+ * @param basicStyle
+ * @param _layoutResult
+ */
+const calculateGroupHeaderMaxTextHeight = (
+  info,
+  newChart,
+  tableHeader,
+  basicStyle,
+  _layoutResult
+) => {
+  if (tableHeader.showTableHeader === false) return
+  const maxLines = basicStyle.maxLines ?? 1
+  const textStyle = { ...newChart.theme.cornerCell.text, fontSize: tableHeader.tableTitleFontSize }
+  const sourceText = info.info.name
+  return (
+    getWrapTextHeight(
+      getWrapText(sourceText, textStyle, info.info.resizedWidth, newChart),
+      textStyle,
+      newChart,
+      maxLines
+    ) +
+    textStyle.fontSize +
+    10.5
+  )
 }

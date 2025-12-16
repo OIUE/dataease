@@ -14,12 +14,11 @@ import { ChartLibraryType } from '@/views/chart/components/js/panel/types'
 import { G2PlotChartView } from '@/views/chart/components/js/panel/types/impl/g2plot'
 import { L7PlotChartView } from '@/views/chart/components/js/panel/types/impl/l7plot'
 import chartViewManager from '@/views/chart/components/js/panel'
-import { useAppStoreWithOut } from '@/store/modules/app'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import ViewTrackBar from '@/components/visualization/ViewTrackBar.vue'
 import { storeToRefs } from 'pinia'
 import { parseJson } from '@/views/chart/components/js/util'
-import { defaultsDeep, cloneDeep } from 'lodash-es'
+import { defaultsDeep, cloneDeep, concat } from 'lodash-es'
 import ChartError from '@/views/chart/components/views/components/ChartError.vue'
 import { BASE_VIEW_CONFIG } from '../../editor/util/chart'
 import { customAttrTrans, customStyleTrans, recursionTransObj } from '@/utils/canvasStyle'
@@ -190,8 +189,11 @@ const checkSelected = param => {
   // 获取当前视图的所有联动字段ID
   const mappingFieldIds = Array.from(
     new Set(
-      chartData.value?.fields
-        .map(item => item.id)
+      (view.value.type.includes('chart-mix')
+        ? concat(chartData.value?.left?.fields, chartData.value?.right?.fields)
+        : chartData.value?.fields
+      )
+        .map(item => item?.id)
         .filter(id =>
           Object.keys(nowPanelTrackInfo.value).some(
             key => key.startsWith(view.value.id) && key.split('#')[1] === id
@@ -371,7 +373,6 @@ const renderG2Plot = async (chart, chartView: G2PlotChartView<any, any>) => {
 
 const dynamicAreaId = ref('')
 const country = ref('')
-const appStore = useAppStoreWithOut()
 const chartContainer = ref<HTMLElement>(null)
 let scope
 let mapTimer: number
@@ -436,11 +437,8 @@ const actionDefault = param => {
   if (param.from === 'word-cloud') {
     emitter.emit('word-cloud-default-data-range', param)
   }
-  if (param.from === 'gauge') {
-    emitter.emit('gauge-default-data', param)
-  }
-  if (param.from === 'liquid') {
-    emitter.emit('liquid-default-data', param)
+  if (param.from === 'gauge' || param.from === 'liquid') {
+    emitter.emit('gauge-liquid-y-value', param)
   }
 }
 
@@ -491,7 +489,7 @@ const action = param => {
       state.trackBarStyle.top = trackBarY + 'px'
     }
 
-    viewTrack.value.trackButtonClick()
+    viewTrack.value.trackButtonClick(view.value.id)
   }
 }
 
@@ -615,37 +613,38 @@ const trackMenu = computed(() => {
   let trackMenuInfo = []
   // 复用、放大状态的仪表板不进行联动、跳转和下钻的动作
   if (!['multiplexing', 'viewDialog'].includes(showPosition.value)) {
+    let drillFields =
+      curView?.drill && curView?.drillFilters?.length
+        ? curView.drillFilters.map(item => item.fieldId)
+        : []
     let linkageCount = 0
     let jumpCount = 0
     if (curView?.type?.includes('chart-mix')) {
-      chartData.value?.left?.fields?.forEach(item => {
-        const sourceInfo = view.value.id + '#' + item.id
-        if (nowPanelTrackInfo.value[sourceInfo]) {
-          linkageCount++
-        }
-        if (nowPanelJumpInfo.value[sourceInfo]) {
-          jumpCount++
-        }
-      })
-      chartData.value?.right?.fields?.forEach(item => {
-        const sourceInfo = view.value.id + '#' + item.id
-        if (nowPanelTrackInfo.value[sourceInfo]) {
-          linkageCount++
-        }
-        if (nowPanelJumpInfo.value[sourceInfo]) {
-          jumpCount++
-        }
+      Array.of('left', 'right').forEach(side => {
+        chartData.value?.[side]?.fields
+          ?.filter(item => !drillFields.includes(item.id))
+          .forEach(item => {
+            const sourceInfo = view.value.id + '#' + item.id
+            if (nowPanelTrackInfo.value[sourceInfo]) {
+              linkageCount++
+            }
+            if (nowPanelJumpInfo.value[sourceInfo]) {
+              jumpCount++
+            }
+          })
       })
     } else {
-      chartData.value?.fields?.forEach(item => {
-        const sourceInfo = view.value.id + '#' + item.id
-        if (nowPanelTrackInfo.value[sourceInfo]) {
-          linkageCount++
-        }
-        if (nowPanelJumpInfo.value[sourceInfo]) {
-          jumpCount++
-        }
-      })
+      chartData.value?.fields
+        ?.filter(item => !drillFields.includes(item.id))
+        .forEach(item => {
+          const sourceInfo = view.value.id + '#' + item.id
+          if (nowPanelTrackInfo.value[sourceInfo]) {
+            linkageCount++
+          }
+          if (nowPanelJumpInfo.value[sourceInfo]) {
+            jumpCount++
+          }
+        })
     }
     jumpCount &&
       view.value?.jumpActive &&
@@ -692,10 +691,10 @@ const canvas2Picture = (pictureData, online) => {
   imgDom.style['z-index'] = '2'
   imgDom.classList.add('prepare-picture-img')
   imgDom.src = pictureData
-  mapDom.appendChild(imgDom)
+  mapDom?.appendChild(imgDom)
 }
 const preparePicture = id => {
-  if (id !== curView.id) {
+  if (id !== curView?.id) {
     return
   }
   const chartView = chartViewManager.getChartView(curView.render, curView.type)
@@ -719,7 +718,7 @@ const preparePicture = id => {
   }
 }
 const unPreparePicture = id => {
-  if (id !== curView.id) {
+  if (id !== curView?.id) {
     return
   }
   const chartView = chartViewManager.getChartView(curView.render, curView.type)

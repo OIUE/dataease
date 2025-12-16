@@ -13,6 +13,7 @@ import {
   sysParamsIlns,
   fieldEnums
 } from '../options.js'
+import TimeSetDialog from '@/components/time-set-dialog/index.vue'
 import { iconFieldMap } from '@/components/icon-group/field-list.js'
 export interface Item {
   term: string
@@ -22,6 +23,7 @@ export interface Item {
   enumValue: string
   name: string
   value: number
+  timeType?: string
 }
 
 type Props = {
@@ -35,6 +37,7 @@ const props = withDefaults(defineProps<Props>(), {
     term: '',
     fieldId: '',
     filterType: '',
+    timeType: 'year',
     deType: 0,
     enumValue: '',
     name: '',
@@ -316,6 +319,15 @@ const addFields = () => {
   }
   showTextArea.value = false
 }
+const timeDialog = ref()
+const showTimeDialog = (obj: any) => {
+  if (obj.deType !== 1) return
+  timeDialog.value.init(obj.timeType, obj.value)
+}
+const saveTime = (type, value) => {
+  item.value.timeType = type
+  item.value.value = value
+}
 
 const emits = defineEmits(['update:item', 'del'])
 </script>
@@ -384,6 +396,7 @@ const emits = defineEmits(['update:item', 'del'])
           size="small"
           @change="filterTypeChange"
           v-model="item.filterType"
+          class="w181"
           :placeholder="t('auth.select')"
         >
           <el-option
@@ -438,7 +451,13 @@ const emits = defineEmits(['update:item', 'del'])
             <div class="bottom-line"></div>
           </template>
           <template v-else-if="!['null', 'empty', 'not_null', 'not_empty'].includes(item.term)">
-            <el-input class="w70 mar5" size="small" v-model="item.value" />
+            <el-input
+              class="w70 mar5"
+              size="small"
+              :readonly="item.deType === 1"
+              v-model="item.value"
+              @click="showTimeDialog(item)"
+            />
             <div class="bottom-line"></div>
           </template>
         </template>
@@ -540,6 +559,7 @@ const emits = defineEmits(['update:item', 'del'])
       </el-icon>
     </div>
   </div>
+  <TimeSetDialog @saveTime="saveTime" ref="timeDialog"></TimeSetDialog>
 </template>
 
 <style lang="less" scoped>
@@ -586,11 +606,15 @@ const emits = defineEmits(['update:item', 'del'])
   }
 
   .w100.ed-select {
-    width: 100px;
+    width: 100px !important;
+  }
+
+  .w181.ed-select {
+    width: 181px !important;
   }
 
   .w70 {
-    width: 70px;
+    width: 70px !important;
   }
 
   .mar5 {
@@ -676,11 +700,12 @@ const emits = defineEmits(['update:item', 'del'])
     }
   }
 
-  :deep(.ed-input__wrapper) {
+  :deep(.ed-input__wrapper),
+  :deep(.ed-select__wrapper) {
     background-color: #f8f8fa;
     border: none;
     border-radius: 0;
-    box-shadow: none;
+    box-shadow: none !important;
     height: 26px;
     font-family: var(--de-custom_font, 'PingFang');
     word-wrap: break-word;
@@ -910,9 +935,9 @@ const emits = defineEmits(['update:item', 'del'])
           line-height: 26px;
           border-radius: 4px;
           padding: 0 4px;
-          color: #3370ff;
+          color: var(--ed-color-primary, #3370ff);
           &:hover {
-            background-color: #3370ff1a;
+            background-color: var(--ed-color-primary-1a, #3370ff1a);
           }
         }
       }

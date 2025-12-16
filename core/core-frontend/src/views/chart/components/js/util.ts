@@ -1,4 +1,4 @@
-import { isEmpty, isNumber } from 'lodash-es'
+import { isNumber } from 'lodash-es'
 import { DEFAULT_TITLE_STYLE } from '../editor/util/chart'
 import { equalsAny, includesAny } from '../editor/util/StringUtils'
 import { FeatureCollection } from '@antv/l7plot/dist/esm/plots/choropleth/types'
@@ -12,8 +12,7 @@ import { ElMessage } from 'element-plus-secondary'
 import { useI18n } from '@/hooks/web/useI18n'
 import { useLinkStoreWithOut } from '@/store/modules/link'
 import { useAppStoreWithOut } from '@/store/modules/app'
-import { valueFormatter } from '@/views/chart/components/js/formatter'
-import { deepCopy } from '@/utils/utils'
+import { Decimal } from 'decimal.js'
 
 const appStore = useAppStoreWithOut()
 const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
@@ -286,17 +285,23 @@ export function handleEmptyDataStrategy<O extends PickOptions>(chart: Chart, opt
     }
     return options
   }
-  const { yAxis, xAxisExt, extStack } = chart
+  const { yAxis, xAxisExt, extStack, extBubble } = chart
   const multiDimension = yAxis?.length >= 2 || xAxisExt?.length > 0 || extStack?.length > 0
   switch (strategy) {
     case 'breakLine': {
-      if (multiDimension) {
-        // 多维度保持空
-        if (isChartMix) {
-          for (let i = 0; i < data.length; i++) {
-            handleBreakLineMultiDimension(data[i] as Record<string, any>[])
+      if (isChartMix) {
+        if (data[0]) {
+          if (xAxisExt?.length > 0 || extStack?.length > 0) {
+            handleBreakLineMultiDimension(data[0] as Record<string, any>[])
           }
-        } else {
+        }
+        if (data[1]) {
+          if (extBubble?.length > 0) {
+            handleBreakLineMultiDimension(data[1] as Record<string, any>[])
+          }
+        }
+      } else {
+        if (multiDimension) {
           handleBreakLineMultiDimension(data)
         }
       }
@@ -306,22 +311,27 @@ export function handleEmptyDataStrategy<O extends PickOptions>(chart: Chart, opt
       }
     }
     case 'setZero': {
-      if (multiDimension) {
-        // 多维度置0
-        if (isChartMix) {
-          for (let i = 0; i < data.length; i++) {
-            handleSetZeroMultiDimension(data[i] as Record<string, any>[])
+      if (isChartMix) {
+        if (data[0]) {
+          if (xAxisExt?.length > 0 || extStack?.length > 0) {
+            handleSetZeroMultiDimension(data[0] as Record<string, any>[])
+          } else {
+            handleSetZeroSingleDimension(data[0] as Record<string, any>[])
           }
-        } else {
-          handleSetZeroMultiDimension(data)
+        }
+        if (data[1]) {
+          if (extBubble?.length > 0) {
+            handleSetZeroMultiDimension(data[1] as Record<string, any>[], true)
+          } else {
+            handleSetZeroSingleDimension(data[1] as Record<string, any>[], true)
+          }
         }
       } else {
-        // 单维度置0
-        if (isChartMix) {
-          for (let i = 0; i < data.length; i++) {
-            handleSetZeroSingleDimension(data[i] as Record<string, any>[])
-          }
+        if (multiDimension) {
+          // 多维度置0
+          handleSetZeroMultiDimension(data)
         } else {
+          // 单维度置0
           handleSetZeroSingleDimension(data)
         }
       }
@@ -367,7 +377,7 @@ function handleBreakLineMultiDimension(data) {
   })
 }
 
-function handleSetZeroMultiDimension(data: Record<string, any>[]) {
+function handleSetZeroMultiDimension(data: Record<string, any>[], isExt = false) {
   const dimensionInfoMap = new Map()
   const subDimensionSet = new Set()
   const quotaMap = new Map<string, { id: string }[]>()
@@ -375,6 +385,9 @@ function handleSetZeroMultiDimension(data: Record<string, any>[]) {
     const item = data[i]
     if (item.value === null) {
       item.value = 0
+      if (isExt) {
+        item.valueExt = 0
+      }
     }
     const dimensionInfo = dimensionInfoMap.get(item.field)
     if (dimensionInfo) {
@@ -391,12 +404,17 @@ function handleSetZeroMultiDimension(data: Record<string, any>[]) {
       let subInsertIndex = 0
       subDimensionSet.forEach(dimension => {
         if (!dimensionInfo.set.has(dimension)) {
-          data.splice(dimensionInfo.index + insertCount + subInsertIndex, 0, {
+          const _temp = {
             field,
             value: 0,
             category: dimension,
             quotaList: quotaMap.get(dimension as string)
-          })
+          } as any
+          if (isExt) {
+            _temp.valueExt = 0
+          }
+
+          data.splice(dimensionInfo.index + insertCount + subInsertIndex, 0, _temp)
         }
         subInsertIndex++
       })
@@ -405,10 +423,14 @@ function handleSetZeroMultiDimension(data: Record<string, any>[]) {
   })
 }
 
-function handleSetZeroSingleDimension(data: Record<string, any>[]) {
+function handleSetZeroSingleDimension(data: Record<string, any>[], isExt = false) {
   data.forEach(item => {
     if (item.value === null) {
-      item.value = 0
+      if (!isExt) {
+        item.value = 0
+      } else {
+        item.valueExt = 0
+      }
     }
   })
 }
@@ -525,8 +547,20 @@ const getExcelDownloadRequest = (data, type?) => {
   }
 }
 
-export const exportExcelDownload = (chart, callBack?) => {
-  const excelName = chart.title
+function getChartExcelTitle(preFix, viewTitle) {
+  const now = new Date()
+  const pad = n => n.toString().padStart(2, '0')
+  const year = now.getFullYear()
+  const month = pad(now.getMonth() + 1) // 月份从 0 开始
+  const day = pad(now.getDate())
+  const hour = pad(now.getHours())
+  const minute = pad(now.getMinutes())
+  const second = pad(now.getSeconds())
+  return `${preFix}_${viewTitle}_${year}${month}${day}_${hour}${minute}${second}`
+}
+
+export const exportExcelDownload = (chart, preFix, callBack?) => {
+  const excelName = getChartExcelTitle(preFix, chart.title)
   let request: any = {
     proxy: null,
     dvId: chart.sceneId,
@@ -785,7 +819,7 @@ export function getColor(chart: Chart) {
   }
 }
 
-export function setupSeriesColor(chart: ChartObj, data?: any[]): ChartBasicStyle['seriesColor'] {
+export function setupSeriesColor(chart: ChartObj): ChartBasicStyle['seriesColor'] {
   const result: ChartBasicStyle['seriesColor'] = []
   const seriesSet = new Set<string>()
   const colors = chart.customAttr.basicStyle.colors
@@ -1158,8 +1192,10 @@ export function getLineLabelColorByCondition(conditions, value, fieldId) {
   if (fieldConditions.length) {
     fieldConditions.some(item => {
       if (
-        (item.term === 'lt' && value <= item.value) ||
-        (item.term === 'gt' && value >= item.value) ||
+        (item.term === 'lt' && value < item.value) ||
+        (item.term === 'le' && value <= item.value) ||
+        (item.term === 'gt' && value > item.value) ||
+        (item.term === 'ge' && value >= item.value) ||
         (item.term === 'between' && value >= item.min && value <= item.max)
       ) {
         color = item.color
@@ -1212,4 +1248,28 @@ export const hexToRgba = (hex, alpha = 1) => {
   const a = hexAlpha ? parseInt(hex.slice(6, 8), 16) / 255 : alpha
   // 返回 RGBA 格式
   return `rgba(${r}, ${g}, ${b}, ${a})`
+}
+
+// 安全计算数值字段的总和，使用 Decimal 避免浮点数精度问题
+export function safeDecimalSum(data, field) {
+  // 使用 reduce 累加所有行的指定字段值
+  return data
+    .reduce((acc, row) => {
+      // 将字段值转换为 Decimal 类型并累加到累加器
+      return acc.plus(new Decimal(row[field] ?? 0))
+    }, new Decimal(0))
+    .toNumber() // 最终结果转换为普通数字返回
+}
+
+// 安全计算数值字段的平均值，使用 Decimal 避免浮点数精度问题
+export function safeDecimalMean(data, field) {
+  // 如果数据为空，直接返回 0
+  if (!data.length) return 0
+  // 计算所有行的指定字段值的总和
+  const sum = data.reduce((acc, row) => {
+    // 将字段值转换为 Decimal 类型并累加到累加器
+    return acc.plus(new Decimal(row[field] ?? 0))
+  }, new Decimal(0))
+  // 将总和除以数据行数，得到平均值，并转换为普通数字返回
+  return sum.dividedBy(data.length).toNumber()
 }

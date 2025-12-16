@@ -2,7 +2,10 @@ package io.dataease.visualization.server;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.dataease.api.dataset.union.DatasetGroupInfoDTO;
+import io.dataease.api.dataset.union.DatasetTableInfoDTO;
+import io.dataease.api.dataset.union.UnionDTO;
 import io.dataease.api.template.dto.TemplateManageFileDTO;
 import io.dataease.api.template.dto.VisualizationTemplateExtendDataDTO;
 import io.dataease.api.visualization.DataVisualizationApi;
@@ -14,6 +17,7 @@ import io.dataease.api.visualization.vo.*;
 import io.dataease.auth.DeLinkPermit;
 import io.dataease.chart.dao.auto.entity.CoreChartView;
 import io.dataease.chart.dao.auto.mapper.CoreChartViewMapper;
+import io.dataease.chart.dao.ext.mapper.ExtChartViewMapper;
 import io.dataease.chart.manage.ChartDataManage;
 import io.dataease.chart.manage.ChartViewManege;
 import io.dataease.commons.constants.DataVisualizationConstants;
@@ -28,17 +32,21 @@ import io.dataease.dataset.dao.auto.mapper.CoreDatasetTableFieldMapper;
 import io.dataease.dataset.dao.auto.mapper.CoreDatasetTableMapper;
 import io.dataease.dataset.manage.DatasetDataManage;
 import io.dataease.dataset.manage.DatasetGroupManage;
+import io.dataease.dataset.manage.DatasetSQLManage;
+import io.dataease.dataset.utils.DatasetUtils;
 import io.dataease.datasource.dao.auto.entity.CoreDatasource;
 import io.dataease.datasource.dao.auto.mapper.CoreDatasourceMapper;
 import io.dataease.datasource.provider.ExcelUtils;
 import io.dataease.datasource.server.DatasourceServer;
 import io.dataease.exception.DEException;
+import io.dataease.extensions.datasource.dto.DatasetTableDTO;
 import io.dataease.extensions.datasource.vo.DatasourceConfiguration;
 import io.dataease.extensions.view.dto.ChartViewDTO;
 import io.dataease.i18n.Translator;
 import io.dataease.license.config.XpackInteract;
 import io.dataease.license.manage.CoreLicManage;
 import io.dataease.log.DeLog;
+import io.dataease.menu.dao.auto.entity.CoreMenu;
 import io.dataease.model.BusiNodeRequest;
 import io.dataease.model.BusiNodeVO;
 import io.dataease.operation.manage.CoreOptRecentManage;
@@ -54,6 +62,7 @@ import io.dataease.visualization.dao.auto.entity.DataVisualizationInfo;
 import io.dataease.visualization.dao.auto.entity.SnapshotDataVisualizationInfo;
 import io.dataease.visualization.dao.auto.entity.VisualizationWatermark;
 import io.dataease.visualization.dao.auto.mapper.DataVisualizationInfoMapper;
+import io.dataease.visualization.dao.auto.mapper.SnapshotCoreChartViewMapper;
 import io.dataease.visualization.dao.auto.mapper.SnapshotDataVisualizationInfoMapper;
 import io.dataease.visualization.dao.auto.mapper.VisualizationWatermarkMapper;
 import io.dataease.visualization.dao.ext.mapper.ExtDataVisualizationMapper;
@@ -61,11 +70,12 @@ import io.dataease.visualization.manage.CoreBusiManage;
 import io.dataease.visualization.manage.CoreVisualizationManage;
 import io.dataease.visualization.utils.VisualizationUtils;
 import jakarta.annotation.Resource;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -132,7 +142,8 @@ public class DataVisualizationServer implements DataVisualizationApi {
 
     @Resource
     private CoreDatasetTableFieldMapper coreDatasetTableFieldMapper;
-    @Autowired
+
+    @Resource
     private CoreDatasourceMapper coreDatasourceMapper;
 
     @Resource
@@ -148,10 +159,14 @@ public class DataVisualizationServer implements DataVisualizationApi {
 
     @Resource
     private SnapshotDataVisualizationInfoMapper snapshotMapper;
+    @Resource
+    private ExtChartViewMapper extChartViewMapper;
+    @Resource
+    private DatasetSQLManage datasetSQLManage;
 
     @Override
     public DataVisualizationVO findCopyResource(Long dvId, String busiFlag) {
-        DataVisualizationVO result = Objects.requireNonNull(CommonBeanFactory.proxy(this.getClass())).findById(new DataVisualizationBaseRequest(dvId, busiFlag));
+        DataVisualizationVO result = Objects.requireNonNull(CommonBeanFactory.proxy(this.getClass())).findById(new DataVisualizationBaseRequest(dvId, busiFlag, CommonConstants.RESOURCE_TABLE.SNAPSHOT, DataVisualizationConstants.QUERY_SOURCE.MAIN_EDIT));
         if (result != null && result.getPid() == -1) {
             return result;
         } else {
@@ -168,14 +183,15 @@ public class DataVisualizationServer implements DataVisualizationApi {
         String busiFlag = request.getBusiFlag();
         String resourceTable = request.getResourceTable();
         // 如果是编辑查询 则进行镜像检查
-        if(CommonConstants.RESOURCE_TABLE.SNAPSHOT.equals(resourceTable)){
+        if (DataVisualizationConstants.QUERY_SOURCE.MAIN_EDIT.equals(request.getSource())) {
             QueryWrapper<SnapshotDataVisualizationInfo> queryWrapper = new QueryWrapper<>();
             queryWrapper.eq("id", dvId);
-            if(!snapshotMapper.exists(queryWrapper)){
+            queryWrapper.in("status", Arrays.asList(CommonConstants.DV_STATUS.UNPUBLISHED, CommonConstants.DV_STATUS.SAVED_UNPUBLISHED)); // 状态为0 未发布 和 2 已保存未发布的 不需要重置镜像
+            if (!snapshotMapper.exists(queryWrapper)) {
                 coreVisualizationManage.dvSnapshotRecover(dvId);
             }
         }
-        DataVisualizationVO result = extDataVisualizationMapper.findDvInfo(dvId, busiFlag,resourceTable);
+        DataVisualizationVO result = extDataVisualizationMapper.findDvInfo(dvId, busiFlag, resourceTable);
         if (result != null) {
             // get creator
             String userName = coreUserManage.getUserName(Long.valueOf(result.getCreateBy()));
@@ -183,9 +199,10 @@ public class DataVisualizationServer implements DataVisualizationApi {
                 result.setCreatorName(userName);
             }
             //获取图表信息
-            List<ChartViewDTO> chartViewDTOS = chartViewManege.listBySceneId(dvId,resourceTable);
+            List<ChartViewDTO> chartViewDTOS = chartViewManege.listBySceneId(dvId, resourceTable);
             if (!CollectionUtils.isEmpty(chartViewDTOS)) {
-                Map<Long, ChartViewDTO> viewInfo = chartViewDTOS.stream().collect(Collectors.toMap(ChartViewDTO::getId, chartView -> chartView));
+                // 增加过滤当前使用的图表信息
+                Map<Long, ChartViewDTO> viewInfo = chartViewDTOS.stream().filter(item -> result.getComponentData().indexOf("\"id\":\"" + item.getId()) > 0).collect(Collectors.toMap(ChartViewDTO::getId, chartView -> chartView));
                 result.setCanvasViewInfo(viewInfo);
             }
             VisualizationWatermark watermark = watermarkMapper.selectById("system_default");
@@ -215,9 +232,91 @@ public class DataVisualizationServer implements DataVisualizationApi {
             result.setWeight(9);
             return result;
         } else {
-            DEException.throwException("资源不存在或已经被删除...");
+            DEException.throwException(Translator.get("i18n_resource_not_exists"));
         }
         return null;
+    }
+
+    private void appDatasetMatch(VisualizationExport2AppVO appData, Map<Long, Long> datasourceIdMap, Map<Long, Long> dsGroupIdMap, Map<Long, Long> dsTableIdMap, Map<Long, Long> dsTableFieldsIdMap,Map<String, String> dsTableFieldsDatasetNameMap) {
+
+        List<AppCoreDatasetGroupVO> sourceDatasetGroupList = appData.getDatasetGroupsInfo();
+        List<AppCoreDatasetTableVO> sourceDatasetTableList = appData.getDatasetTablesInfo();
+        List<AppCoreDatasetTableFieldVO> sourceDatasetTableFieldList = appData.getDatasetTableFieldsInfo();
+
+        Map<Long, List<AppCoreDatasetTableVO>> sourceDatasetTableMap =
+                DeCollectionUtils.groupBy(sourceDatasetTableList, AppCoreDatasetTableVO::getDatasetGroupId);
+
+        Map<Long, List<AppCoreDatasetTableFieldVO>> sourceDatasetTableFieldMap =
+                DeCollectionUtils.groupBy(sourceDatasetTableFieldList, AppCoreDatasetTableFieldVO::getDatasetTableId);
+
+        Map<Long, List<AppCoreDatasetTableFieldVO>> sourceDatasetTableFieldMapGroup =
+                DeCollectionUtils.groupBy(sourceDatasetTableFieldList, AppCoreDatasetTableFieldVO::getDatasetGroupId);
+
+
+        sourceDatasetGroupList.forEach(sourceDatasetGroup -> {
+            Long systemDatasetGroupId = sourceDatasetGroup.getSystemDatasetId();
+            Long sourceDatasetGroupId = sourceDatasetGroup.getId();
+            // 获取 dsGroupIdMap
+            dsGroupIdMap.put(sourceDatasetGroup.getId(), systemDatasetGroupId);
+            CoreDatasetGroup systemDatasetGroup = coreDatasetGroupMapper.selectById(systemDatasetGroupId);
+            if (systemDatasetGroup != null) {
+                QueryWrapper<CoreDatasetTable> wrapper = new QueryWrapper<>();
+                wrapper.eq("dataset_group_id", systemDatasetGroupId);
+                List<CoreDatasetTable> systemDatasetTableList = coreDatasetTableMapper.selectList(wrapper);
+                List<AppCoreDatasetTableVO> sourceDatasetTableListSub = sourceDatasetTableMap.get(sourceDatasetGroupId);
+                if (systemDatasetTableList != null && sourceDatasetTableListSub != null) {
+                    for (AppCoreDatasetTableVO sourceTable : sourceDatasetTableListSub) {
+                        for (CoreDatasetTable systemTable : systemDatasetTableList) {
+                            if (sourceTable.getTableName().equals(systemTable.getTableName())) {
+                                // 获取dsTableIdMap datasourceIdMap
+                                dsTableIdMap.put(sourceTable.getId(), systemTable.getId());
+                                datasourceIdMap.put(sourceTable.getDatasourceId(), systemTable.getDatasourceId());
+
+                                // 获取 dsTableFieldsIdMap
+                                List<AppCoreDatasetTableFieldVO> sourceDatasetTableFieldListSub = sourceDatasetTableFieldMap.get(sourceTable.getId());
+
+                                QueryWrapper<CoreDatasetTableField> wrapperField = new QueryWrapper<>();
+                                wrapperField.eq("dataset_table_id", systemTable.getId());
+                                List<CoreDatasetTableField> systemDatasetTableFieldSub = coreDatasetTableFieldMapper.selectList(wrapperField);
+
+                                for (AppCoreDatasetTableFieldVO sourceTableField : sourceDatasetTableFieldListSub) {
+                                    for (CoreDatasetTableField systemTableField : systemDatasetTableFieldSub) {
+                                        if (sourceTableField.getOriginName().equals(systemTableField.getOriginName())) {
+                                            // 获取dsTableIdMap datasourceIdMap
+                                            dsTableFieldsIdMap.put(sourceTableField.getId(), systemTableField.getId());
+                                            dsTableFieldsDatasetNameMap.put(sourceTableField.getDataeaseName(),systemTableField.getDataeaseName());
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // 获取 dsTableFieldsIdMapGroup 进行二次匹配 解决计算字段没有tableId 问题
+                                List<AppCoreDatasetTableFieldVO> sourceDatasetTableFieldListSubGroup = sourceDatasetTableFieldMapGroup.get(sourceTable.getDatasetGroupId());
+
+                                QueryWrapper<CoreDatasetTableField> wrapperFieldGroup = new QueryWrapper<>();
+                                wrapperFieldGroup.eq("dataset_group_id", systemTable.getDatasetGroupId());
+                                List<CoreDatasetTableField> systemDatasetTableFieldSubGroup = coreDatasetTableFieldMapper.selectList(wrapperFieldGroup);
+
+                                for (AppCoreDatasetTableFieldVO sourceTableField : sourceDatasetTableFieldListSubGroup) {
+                                    for (CoreDatasetTableField systemTableField : systemDatasetTableFieldSubGroup) {
+                                        if (dsTableFieldsIdMap.get(sourceTableField.getId())==null && sourceTableField.getName().equals(systemTableField.getName())) {
+                                            // 获取dsTableIdMap datasourceIdMap
+                                            dsTableFieldsIdMap.put(sourceTableField.getId(), systemTableField.getId());
+                                            dsTableFieldsDatasetNameMap.put(sourceTableField.getDataeaseName(),systemTableField.getDataeaseName());
+                                            break;
+                                        }
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+
+            }
+        });
+
+
     }
 
     @DeLog(id = "#p0.id", pid = "#p0.pid", ot = LogOT.CREATE, stExp = "#p0.type")
@@ -240,146 +339,163 @@ public class DataVisualizationServer implements DataVisualizationApi {
         List<DatasetGroupInfoDTO> newDsGroupInfo = new ArrayList<>();
         Map<Long, Long> dsTableIdMap = new HashMap<>();
         Map<Long, Long> dsTableFieldsIdMap = new HashMap<>();
+        Map<String, String> dsTableFieldsDatasetNameMap = new HashMap<>();
         List<CoreDatasetTableField> dsTableFieldsList = new ArrayList();
         Map<Long, Long> datasourceIdMap = new HashMap<>();
         Map<Long, Map<String, String>> dsTableNamesMap = new HashMap<>();
         List<Long> newDatasourceId = new ArrayList<>();
+        List<Long> excelDatasourceId = new ArrayList<>();
+        Map<String, String> excelTableNamesMap = new HashMap<>();
         if (appData != null) {
             isAppSave = true;
-            try {
-                List<AppCoreDatasourceVO> appCoreDatasourceVO = appData.getDatasourceInfo();
-
-                //  app 数据源 excel 表名映射
-                appCoreDatasourceVO.forEach(datasourceOld -> {
-                    newDatasourceId.add(datasourceOld.getSystemDatasourceId());
-                    // Excel 数据表明映射
-                    if (StringUtils.isNotEmpty(datasourceOld.getConfiguration())) {
-                        if (datasourceOld.getType().equals(DatasourceConfiguration.DatasourceType.API.name())) {
-                            DEException.throwException(Translator.get("i18n_app_error_no_api"));
-                        } else if (datasourceOld.getType().equals(DatasourceConfiguration.DatasourceType.Excel.name())) {
-                            dsTableNamesMap.put(datasourceOld.getId(), ExcelUtils.getTableNamesMap(datasourceOld.getType(), datasourceOld.getConfiguration()));
-                        } else if (datasourceOld.getType().contains(DatasourceConfiguration.DatasourceType.API.name())) {
-                            dsTableNamesMap.put(datasourceOld.getId(), (Map<String, String>) datasourceServer.invokeMethod(datasourceOld.getType(), "getTableNamesMap", String.class, datasourceOld.getConfiguration()));
+            if ("dataset".equals(request.getDataType())) {
+                appDatasetMatch(appData, datasourceIdMap, dsGroupIdMap, dsTableIdMap, dsTableFieldsIdMap,dsTableFieldsDatasetNameMap);
+            } else {
+                try {
+                    List<AppCoreDatasourceVO> appCoreDatasourceVO = appData.getDatasourceInfo();
+                    //  app 数据源 excel 表名映射
+                    appCoreDatasourceVO.forEach(datasourceOld -> {
+                        newDatasourceId.add(datasourceOld.getSystemDatasourceId());
+                        // Excel 数据表明映射
+                        if (StringUtils.isNotEmpty(datasourceOld.getConfiguration())) {
+                            if (datasourceOld.getType().equals(DatasourceConfiguration.DatasourceType.API.name())) {
+                                DEException.throwException(Translator.get("i18n_app_error_no_api"));
+                            } else if (datasourceOld.getType().equals(DatasourceConfiguration.DatasourceType.Excel.name())) {
+                                dsTableNamesMap.put(datasourceOld.getId(), ExcelUtils.getTableNamesMap(datasourceOld.getType(), datasourceOld.getConfiguration()));
+                            } else if (datasourceOld.getType().contains(DatasourceConfiguration.DatasourceType.API.name())) {
+                                dsTableNamesMap.put(datasourceOld.getId(), (Map<String, String>) datasourceServer.invokeMethod(datasourceOld.getType(), "getTableNamesMap", String.class, datasourceOld.getConfiguration()));
+                            }
                         }
-                    }
-                });
+                    });
 
-                List<CoreDatasource> systemDatasource = coreDatasourceMapper.selectBatchIds(newDatasourceId);
-                systemDatasource.forEach(datasourceNew -> {
-                    // Excel 数据表明映射
-                    if (StringUtils.isNotEmpty(datasourceNew.getConfiguration())) {
-                        if (datasourceNew.getType().equals(DatasourceConfiguration.DatasourceType.Excel.name())) {
-                            dsTableNamesMap.put(datasourceNew.getId(), ExcelUtils.getTableNamesMap(datasourceNew.getType(), datasourceNew.getConfiguration()));
-                        } else if (datasourceNew.getType().contains(DatasourceConfiguration.DatasourceType.API.name())) {
-                            dsTableNamesMap.put(datasourceNew.getId(), (Map<String, String>) datasourceServer.invokeMethod(datasourceNew.getType(), "getTableNamesMap", String.class, datasourceNew.getConfiguration()));
+                    List<CoreDatasource> systemDatasource = coreDatasourceMapper.selectBatchIds(newDatasourceId);
+                    systemDatasource.forEach(datasourceNew -> {
+                        // Excel 数据表明映射
+                        if (StringUtils.isNotEmpty(datasourceNew.getConfiguration())) {
+                            if (datasourceNew.getType().equals(DatasourceConfiguration.DatasourceType.Excel.name())) {
+                                dsTableNamesMap.put(datasourceNew.getId(), ExcelUtils.getTableNamesMap(datasourceNew.getType(), datasourceNew.getConfiguration()));
+                                excelDatasourceId.add(datasourceNew.getId());
+                            } else if (datasourceNew.getType().contains(DatasourceConfiguration.DatasourceType.API.name())) {
+                                dsTableNamesMap.put(datasourceNew.getId(), (Map<String, String>) datasourceServer.invokeMethod(datasourceNew.getType(), "getTableNamesMap", String.class, datasourceNew.getConfiguration()));
+                            }
                         }
-                    }
-                });
-                datasourceIdMap.putAll(appData.getDatasourceInfo().stream().collect(Collectors.toMap(AppCoreDatasourceVO::getId, AppCoreDatasourceVO::getSystemDatasourceId)));
-                Long datasetFolderPid = request.getDatasetFolderPid();
-                String datasetFolderName = request.getDatasetFolderName();
-                //新建数据集分组
-                DatasetGroupInfoDTO datasetFolderNewRequest = new DatasetGroupInfoDTO();
-                datasetFolderNewRequest.setName(datasetFolderName);
-                datasetFolderNewRequest.setNodeType("folder");
-                datasetFolderNewRequest.setPid(datasetFolderPid);
-                DatasetGroupInfoDTO datasetFolderNew = datasetGroupManage.save(datasetFolderNewRequest, false, false);
-                Long datasetFolderNewId = datasetFolderNew.getId();
-                //新建数据集
-                appData.getDatasetGroupsInfo().forEach(appDatasetGroup -> {
-                    if ("dataset".equals(appDatasetGroup.getNodeType())) {
-                        Long oldId = appDatasetGroup.getId();
+                    });
+                    datasourceIdMap.putAll(appData.getDatasourceInfo().stream().collect(Collectors.toMap(AppCoreDatasourceVO::getId, AppCoreDatasourceVO::getSystemDatasourceId)));
+                    Long datasetFolderPid = request.getDatasetFolderPid();
+                    String datasetFolderName = request.getDatasetFolderName();
+                    //新建数据集分组
+                    DatasetGroupInfoDTO datasetFolderNewRequest = new DatasetGroupInfoDTO();
+                    datasetFolderNewRequest.setName(datasetFolderName);
+                    datasetFolderNewRequest.setNodeType("folder");
+                    datasetFolderNewRequest.setPid(datasetFolderPid);
+                    DatasetGroupInfoDTO datasetFolderNew = datasetGroupManage.save(datasetFolderNewRequest, false, false);
+                    Long datasetFolderNewId = datasetFolderNew.getId();
+                    //新建数据集
+                    appData.getDatasetGroupsInfo().forEach(appDatasetGroup -> {
+                        if ("dataset".equals(appDatasetGroup.getNodeType())) {
+                            Long oldId = appDatasetGroup.getId();
+                            Long newId = IDUtils.snowID();
+                            DatasetGroupInfoDTO datasetNewRequest = new DatasetGroupInfoDTO();
+                            BeanUtils.copyBean(datasetNewRequest, appDatasetGroup);
+                            datasetNewRequest.setId(newId);
+                            datasetNewRequest.setCreateBy(AuthUtils.getUser().getUserId() + "");
+                            datasetNewRequest.setUpdateBy(AuthUtils.getUser().getUserId() + "");
+                            datasetNewRequest.setCreateTime(time);
+                            datasetNewRequest.setLastUpdateTime(time);
+                            datasetNewRequest.setPid(datasetFolderNewId);
+                            try {
+                                newDsGroupInfo.add(datasetNewRequest);
+                                dsGroupIdMap.put(oldId, newId);
+                            } catch (Exception e) {
+                                throw new RuntimeException(e);
+                            }
+                        }
+
+                    });
+                    // 新建数据集表
+                    appData.getDatasetTablesInfo().forEach(appCoreDatasetTableVO -> {
+                        Long oldId = appCoreDatasetTableVO.getId();
                         Long newId = IDUtils.snowID();
-                        DatasetGroupInfoDTO datasetNewRequest = new DatasetGroupInfoDTO();
-                        BeanUtils.copyBean(datasetNewRequest, appDatasetGroup);
-                        datasetNewRequest.setId(newId);
-                        datasetNewRequest.setCreateBy(AuthUtils.getUser().getUserId() + "");
-                        datasetNewRequest.setUpdateBy(AuthUtils.getUser().getUserId() + "");
-                        datasetNewRequest.setCreateTime(time);
-                        datasetNewRequest.setLastUpdateTime(time);
-                        datasetNewRequest.setPid(datasetFolderNewId);
-                        try {
-                            newDsGroupInfo.add(datasetNewRequest);
-                            dsGroupIdMap.put(oldId, newId);
-                        } catch (Exception e) {
-                            throw new RuntimeException(e);
+                        CoreDatasetTable datasetTable = new CoreDatasetTable();
+                        BeanUtils.copyBean(datasetTable, appCoreDatasetTableVO);
+                        datasetTable.setDatasetGroupId(dsGroupIdMap.get(datasetTable.getDatasetGroupId()));
+                        datasetTable.setId(newId);
+                        datasetTable.setDatasourceId(datasourceIdMap.get(datasetTable.getDatasourceId()));
+                        coreDatasetTableMapper.insert(datasetTable);
+                        dsTableIdMap.put(oldId, newId);
+
+                    });
+                    // 新建数据字段
+                    appData.getDatasetTableFieldsInfo().forEach(appDsTableFields -> {
+                        Long oldId = appDsTableFields.getId();
+                        Long newId = IDUtils.snowID();
+                        CoreDatasetTableField dsDsField = new CoreDatasetTableField();
+                        BeanUtils.copyBean(dsDsField, appDsTableFields);
+                        dsDsField.setDatasetGroupId(dsGroupIdMap.get(dsDsField.getDatasetGroupId()));
+                        dsDsField.setDatasetTableId(dsTableIdMap.get(dsDsField.getDatasetTableId()));
+                        dsDsField.setDatasourceId(datasourceIdMap.get(dsDsField.getDatasourceId()));
+                        dsDsField.setId(newId);
+                        dsTableFieldsList.add(dsDsField);
+                        dsTableFieldsIdMap.put(oldId, newId);
+                    });
+
+                    // dsTableFields 中存在计算字段在OriginName中 也需要替换
+                    dsTableFieldsList.forEach(dsTableFields -> {
+                        dsTableFieldsIdMap.forEach((key, value) -> {
+                            dsTableFields.setOriginName(dsTableFields.getOriginName().replaceAll(key.toString(), value.toString()));
+                        });
+                        coreDatasetTableFieldMapper.insert(dsTableFields);
+                    });
+
+                    List<String> dsGroupNameSave = new ArrayList<>();
+                    // 持久化数据集
+                    newDsGroupInfo.forEach(dsGroup -> {
+                        dsTableIdMap.forEach((key, value) -> {
+                            dsGroup.setInfo(dsGroup.getInfo().replaceAll(key.toString(), value.toString()));
+                        });
+
+                        dsTableFieldsIdMap.forEach((key, value) -> {
+                            dsGroup.setInfo(dsGroup.getInfo().replaceAll(key.toString(), value.toString()));
+                        });
+
+                        datasourceIdMap.forEach((key, value) -> {
+                            dsGroup.setInfo(dsGroup.getInfo().replaceAll(key.toString(), value.toString()));
+                            //表名映射更新
+                            Map<String, String> appDsTableNamesMap = dsTableNamesMap.get(key);
+                            Map<String, String> systemDsTableNamesMap = dsTableNamesMap.get(value);
+                            if (MapUtils.isNotEmpty(appDsTableNamesMap)) {
+                                appDsTableNamesMap.forEach((keyName, valueName) -> {
+                                    if (MapUtils.isNotEmpty(systemDsTableNamesMap) && StringUtils.isNotEmpty(systemDsTableNamesMap.get(keyName))) {
+                                        dsGroup.setInfo(dsGroup.getInfo().replaceAll(valueName, systemDsTableNamesMap.get(keyName)));
+                                        excelTableNamesMap.put(valueName, systemDsTableNamesMap.get(keyName));
+                                    } else {
+                                        dsGroup.setInfo(dsGroup.getInfo().replaceAll(valueName, "excel_can_not_find"));
+                                    }
+                                });
+                            }
+
+                        });
+                        if (dsGroupNameSave.contains(dsGroup.getName())) {
+                            dsGroup.setName(dsGroup.getName() + "-" + UUID.randomUUID().toString());
                         }
-                    }
-
-                });
-                // 新建数据集表
-                appData.getDatasetTablesInfo().forEach(appCoreDatasetTableVO -> {
-                    Long oldId = appCoreDatasetTableVO.getId();
-                    Long newId = IDUtils.snowID();
-                    CoreDatasetTable datasetTable = new CoreDatasetTable();
-                    BeanUtils.copyBean(datasetTable, appCoreDatasetTableVO);
-                    datasetTable.setDatasetGroupId(dsGroupIdMap.get(datasetTable.getDatasetGroupId()));
-                    datasetTable.setId(newId);
-                    datasetTable.setDatasourceId(datasourceIdMap.get(datasetTable.getDatasourceId()));
-                    coreDatasetTableMapper.insert(datasetTable);
-                    dsTableIdMap.put(oldId, newId);
-
-                });
-                // 新建数据字段
-                appData.getDatasetTableFieldsInfo().forEach(appDsTableFields -> {
-                    Long oldId = appDsTableFields.getId();
-                    Long newId = IDUtils.snowID();
-                    CoreDatasetTableField dsDsField = new CoreDatasetTableField();
-                    BeanUtils.copyBean(dsDsField, appDsTableFields);
-                    dsDsField.setDatasetGroupId(dsGroupIdMap.get(dsDsField.getDatasetGroupId()));
-                    dsDsField.setDatasetTableId(dsTableIdMap.get(dsDsField.getDatasetTableId()));
-                    dsDsField.setDatasourceId(datasourceIdMap.get(dsDsField.getDatasourceId()));
-                    dsDsField.setId(newId);
-                    dsTableFieldsList.add(dsDsField);
-                    dsTableFieldsIdMap.put(oldId, newId);
-                });
-
-                // dsTableFields 中存在计算字段在OriginName中 也需要替换
-                dsTableFieldsList.forEach(dsTableFields -> {
-                    dsTableFieldsIdMap.forEach((key, value) -> {
-                        dsTableFields.setOriginName(dsTableFields.getOriginName().replaceAll(key.toString(), value.toString()));
-                    });
-                    coreDatasetTableFieldMapper.insert(dsTableFields);
-                });
-
-                List<String> dsGroupNameSave = new ArrayList<>();
-                // 持久化数据集
-                newDsGroupInfo.forEach(dsGroup -> {
-                    dsTableIdMap.forEach((key, value) -> {
-                        dsGroup.setInfo(dsGroup.getInfo().replaceAll(key.toString(), value.toString()));
-                    });
-
-                    dsTableFieldsIdMap.forEach((key, value) -> {
-                        dsGroup.setInfo(dsGroup.getInfo().replaceAll(key.toString(), value.toString()));
-                    });
-
-                    datasourceIdMap.forEach((key, value) -> {
-                        dsGroup.setInfo(dsGroup.getInfo().replaceAll(key.toString(), value.toString()));
-                        //表名映射更新
-                        Map<String, String> appDsTableNamesMap = dsTableNamesMap.get(key);
-                        Map<String, String> systemDsTableNamesMap = dsTableNamesMap.get(value);
-                        if (!CollectionUtils.isEmpty(appDsTableNamesMap)) {
-                            appDsTableNamesMap.forEach((keyName, valueName) -> {
-                                if (!CollectionUtils.isEmpty(systemDsTableNamesMap) && StringUtils.isNotEmpty(systemDsTableNamesMap.get(keyName))) {
-                                    dsGroup.setInfo(dsGroup.getInfo().replaceAll(valueName, systemDsTableNamesMap.get(keyName)));
-                                } else {
-                                    dsGroup.setInfo(dsGroup.getInfo().replaceAll(valueName, "excel_can_not_find"));
-                                }
-                            });
+                        dsGroupNameSave.add(dsGroup.getName());
+                        if (dsGroup.getIsCross() == null) {
+                            if (dsGroup.getUnion() == null) {
+                                dsGroup.setUnion(JsonUtil.parseList(dsGroup.getInfo(), new TypeReference<>() {
+                                }));
+                            }
+                            datasetSQLManage.mergeDatasetCrossDefault(dsGroup);
                         }
-
+                        excelAdaptor(dsGroup, excelTableNamesMap, excelDatasourceId);
+                        datasetGroupManage.innerSave(dsGroup);
                     });
-                    if (dsGroupNameSave.contains(dsGroup.getName())) {
-                        dsGroup.setName(dsGroup.getName() + "-" + UUID.randomUUID().toString());
-                    }
-                    dsGroupNameSave.add(dsGroup.getName());
-                    datasetGroupManage.innerSave(dsGroup);
-                });
 
-            } catch (Exception e) {
-                LogUtil.error(e);
-                DEException.throwException(e);
+                } catch (Exception e) {
+                    LogUtil.error(e);
+                    DEException.throwException(e);
+                }
             }
+
             // 更换主数据内容
             AtomicReference<String> componentDataStr = new AtomicReference<>(request.getComponentData());
             dsGroupIdMap.forEach((key, value) -> {
@@ -398,7 +514,7 @@ public class DataVisualizationServer implements DataVisualizationApi {
                 //表名映射更新
                 Map<String, String> appDsTableNamesMap = dsTableNamesMap.get(key);
                 Map<String, String> systemDsTableNamesMap = dsTableNamesMap.get(value);
-                if (!CollectionUtils.isEmpty(appDsTableNamesMap) && !CollectionUtils.isEmpty(systemDsTableNamesMap)) {
+                if (MapUtils.isNotEmpty(appDsTableNamesMap) && MapUtils.isNotEmpty(systemDsTableNamesMap)) {
                     appDsTableNamesMap.forEach((keyName, valueName) -> {
                         if (StringUtils.isNotEmpty(systemDsTableNamesMap.get(keyName))) {
                             componentDataStr.set(componentDataStr.get().replaceAll(key.toString(), value.toString()));
@@ -423,6 +539,8 @@ public class DataVisualizationServer implements DataVisualizationApi {
             snapshotMapper.deleteById(request.getId());
             visualizationInfo.setNodeType(DataVisualizationConstants.NODE_TYPE.LEAF);
         }
+        // 文件夹走默认发布 非文件夹默认未发布
+        visualizationInfo.setStatus(DataVisualizationConstants.NODE_TYPE.FOLDER.equals(visualizationInfo.getNodeType()) ? CommonConstants.DV_STATUS.PUBLISHED : CommonConstants.DV_STATUS.UNPUBLISHED);
         Long newDvId = coreVisualizationManage.innerSave(visualizationInfo);
         request.setId(newDvId);
         // 还原ID信息
@@ -443,6 +561,9 @@ public class DataVisualizationServer implements DataVisualizationApi {
                 dsGroupIdMap.forEach((key, value) -> {
                     mutableViewInfoStr.set(mutableViewInfoStr.get().replaceAll(key.toString(), value.toString()));
                 });
+                dsTableFieldsDatasetNameMap.forEach((key, value) -> {
+                    mutableViewInfoStr.set(mutableViewInfoStr.get().replaceAll(key, value));
+                });
                 canvasViewsStr.put(viewId, mutableViewInfoStr.get());
             });
             canvasViews = VisualizationUtils.viewTransToObj(canvasViewsStr);
@@ -458,6 +579,26 @@ public class DataVisualizationServer implements DataVisualizationApi {
         return newDvId.toString();
     }
 
+    private void excelAdaptor(DatasetGroupInfoDTO dsInfo, Map<String, String> excelTableNamesMap, List<Long> excelDsId) {
+        List<UnionDTO> unionDTOList = JsonUtil.parseList(dsInfo.getInfo(), new TypeReference<>() {
+        });
+        if (CollectionUtils.isNotEmpty(excelDsId) && MapUtils.isNotEmpty(excelTableNamesMap)) {
+            for (UnionDTO unionDTO : unionDTOList) {
+                DatasetTableDTO tableDTO = unionDTO.getCurrentDs();
+                if (excelDsId.contains(tableDTO.getDatasourceId())) {
+                    DatasetTableInfoDTO infoDTO = JsonUtil.parseObject(tableDTO.getInfo(), DatasetTableInfoDTO.class);
+                    String s = new String(Base64.getDecoder().decode(infoDTO.getSql()));
+                    excelTableNamesMap.forEach((key, value) -> {
+                        infoDTO.setSql(Base64.getEncoder().encodeToString(s.replaceAll(key, value).getBytes()));
+                    });
+                    tableDTO.setInfo((String) JsonUtil.toJSONString(infoDTO));
+                }
+
+            }
+        }
+        dsInfo.setInfo((String) JsonUtil.toJSONString(unionDTOList));
+    }
+
     @Override
     public String appCanvasNameCheck(DataVisualizationBaseRequest request) throws Exception {
         Long datasetFolderPid = request.getDatasetFolderPid();
@@ -465,6 +606,7 @@ public class DataVisualizationServer implements DataVisualizationApi {
         QueryWrapper<CoreDatasetGroup> queryWrapper = new QueryWrapper<>();
         queryWrapper.eq("name", datasetFolderName);
         queryWrapper.eq("pid", datasetFolderPid);
+        queryWrapper.eq("node_type", DataVisualizationConstants.NODE_TYPE.FOLDER);
         if (coreDatasetGroupMapper.exists(queryWrapper)) {
             return "repeat";
         } else {
@@ -491,7 +633,10 @@ public class DataVisualizationServer implements DataVisualizationApi {
     @DeLog(id = "#p0.id", ot = LogOT.MODIFY, stExp = "#p0.type")
     @Override
     @Transactional
-    public void updateCanvas(DataVisualizationBaseRequest request) {
+    public DataVisualizationVO updateCanvas(DataVisualizationBaseRequest request) {
+        for (Map.Entry<Long, ChartViewDTO> ele : request.getCanvasViewInfo().entrySet()) {
+            DatasetUtils.viewDecode(ele.getValue());
+        }
         Long dvId = request.getId();
         if (dvId == null) {
             DEException.throwException("ID can not be null");
@@ -514,10 +659,14 @@ public class DataVisualizationServer implements DataVisualizationApi {
                 coreVisualizationManage.move(request);
             }
         }
-        visualizationInfo.setStatus(CommonConstants.DV_STATUS.SAVED_UNPUBLISHED);
+        // 状态修改统一为后端操作：历史状态检查 如果 状态为 0（未发布） 或者 2（已发布未保存）则状态不变
+        // 如果当前状态为 1 则状态修改为  2（已发布未保存）
+        Integer curStatus = extDataVisualizationMapper.findDvInfoStats(dvId);
+        visualizationInfo.setStatus(curStatus == 1 ? CommonConstants.DV_STATUS.SAVED_UNPUBLISHED : curStatus);
         coreVisualizationManage.innerEdit(visualizationInfo);
         //保存图表信息
         chartDataManage.saveChartViewFromVisualization(request.getComponentData(), dvId, request.getCanvasViewInfo());
+        return new DataVisualizationVO(visualizationInfo.getStatus());
     }
 
     @Override
@@ -535,9 +684,14 @@ public class DataVisualizationServer implements DataVisualizationApi {
         visualizationInfo.setName(request.getName());
         visualizationInfo.setStatus(request.getStatus());
         coreVisualizationManage.innerEdit(visualizationInfo);
-        if(CommonConstants.DV_STATUS.PUBLISHED == request.getStatus()){
+        if (CommonConstants.DV_STATUS.PUBLISHED == request.getStatus()) {
+            List<Long> viewIds = this.getEnabledViewIds(dvId, CommonConstants.RESOURCE_TABLE.SNAPSHOT);
+            extDataVisualizationMapper.deleteUselessViewsBatchSnapshot(viewIds, dvId);
             coreVisualizationManage.removeDvCore(dvId);
             coreVisualizationManage.dvRestore(dvId);
+            chartViewManege.publishThreshold(dvId, request.getActiveViewIds());
+        } else if (CommonConstants.DV_STATUS.UNPUBLISHED == request.getStatus()) {
+            chartViewManege.publishThreshold(dvId, request.getActiveViewIds());
         }
     }
 
@@ -587,6 +741,9 @@ public class DataVisualizationServer implements DataVisualizationApi {
 
     @Override
     public List<BusiNodeVO> tree(BusiNodeRequest request) {
+        if (StringUtils.isEmpty(request.getResourceTable())) {
+            request.setResourceTable(CommonConstants.RESOURCE_TABLE.SNAPSHOT);
+        }
         String busiFlag = request.getBusiFlag();
         if (busiFlag.equals("dashboard-dataV")) {
             BusiNodeRequest requestDv = new BusiNodeRequest();
@@ -669,8 +826,8 @@ public class DataVisualizationServer implements DataVisualizationApi {
         newDv.setPid(request.getPid());
         newDv.setCreateTime(System.currentTimeMillis());
         // 复制图表 chart_view
-        extDataVisualizationMapper.viewCopyWithDv(sourceDvId, newDvId, copyId,CommonConstants.RESOURCE_TABLE.CORE);
-        extDataVisualizationMapper.viewCopyWithDv(sourceDvId, newDvId, copyId,CommonConstants.RESOURCE_TABLE.SNAPSHOT);
+        extDataVisualizationMapper.viewCopyWithDv(sourceDvId, newDvId, copyId, CommonConstants.RESOURCE_TABLE.CORE);
+        extDataVisualizationMapper.viewCopyWithDv(sourceDvId, newDvId, copyId, CommonConstants.RESOURCE_TABLE.SNAPSHOT);
         List<CoreChartView> viewList = extDataVisualizationMapper.findViewInfoByCopyId(copyId);
         if (!CollectionUtils.isEmpty(viewList)) {
             String componentData = newDv.getComponentData();
@@ -696,7 +853,11 @@ public class DataVisualizationServer implements DataVisualizationApi {
 
     @Override
     public String findDvType(Long dvId) {
-        return extDataVisualizationMapper.findDvType(dvId);
+        String result = extDataVisualizationMapper.findDvType(dvId);
+        if (StringUtils.isEmpty(result)) {
+            DEException.throwException(Translator.get("i18n_resource_not_exists"));
+        }
+        return result;
     }
 
     @Override
@@ -836,10 +997,10 @@ public class DataVisualizationServer implements DataVisualizationApi {
     @Override
     public List<VisualizationViewTableDTO> detailList(Long dvId) {
         List<VisualizationViewTableDTO> result = extDataVisualizationMapper.getVisualizationViewDetails(dvId);
-        DataVisualizationInfo dvInfo = visualizationInfoMapper.selectById(dvId);
+        SnapshotDataVisualizationInfo dvInfo = snapshotMapper.selectById(dvId);
         if (dvInfo != null && !CollectionUtils.isEmpty(result)) {
             String componentData = dvInfo.getComponentData();
-            return result.stream().filter(item -> componentData.indexOf(String.valueOf(item.getId())) > 0).toList();
+            return result.stream().filter(item -> componentData.indexOf("\"id\":\"" + item.getId()) > 0).toList();
         } else {
             return result;
         }
@@ -870,8 +1031,7 @@ public class DataVisualizationServer implements DataVisualizationApi {
 
         if (CollectionUtils.isEmpty(datasourceVOInfo)) {
             DEException.throwException("当前不存在数据源无法导出");
-        } else if (datasourceVOInfo.stream()
-                .anyMatch(datasource -> DatasourceConfiguration.DatasourceType.API.name().equals(datasource.getType()))) {
+        } else if (datasourceVOInfo.stream().anyMatch(datasource -> datasource.getType().contains(DatasourceConfiguration.DatasourceType.API.name()))) {
             DEException.throwException(Translator.get("i18n_app_error_no_api"));
         }
 
@@ -882,6 +1042,26 @@ public class DataVisualizationServer implements DataVisualizationApi {
         List<VisualizationLinkJumpTargetViewInfoVO> listJumpTargetViewInfoVO = appTemplateMapper.findAppLinkJumpTargetViewInfoInfo(dvId);
 
         return new VisualizationExport2AppVO(chartViewVOInfo, datasetGroupVOInfo, datasetTableVOInfo, datasetTableFieldVOInfo, datasourceVOInfo, datasourceTaskVOInfo, linkJumpVOInfo, linkJumpInfoVOInfo, listJumpTargetViewInfoVO, linkageVOInfo, linkageFieldVOInfo);
+    }
+
+    @DeLog(id = "#p0.id", ot = LogOT.APP_TEMPLATE_EXPORT, stExp = "#p0.type")
+    public void exportLogApp(DataVisualizationBaseRequest request) {
+
+    }
+
+    @DeLog(id = "#p0.id", ot = LogOT.TEMPLATE_EXPORT, stExp = "#p0.type")
+    public void exportLogTemplate(DataVisualizationBaseRequest request) {
+
+    }
+
+    @DeLog(id = "#p0.id", ot = LogOT.PDF_EXPORT, stExp = "#p0.type")
+    public void exportLogPDF(DataVisualizationBaseRequest request) {
+
+    }
+
+    @DeLog(id = "#p0.id", ot = LogOT.IMG_EXPORT, stExp = "#p0.type")
+    public void exportLogImg(DataVisualizationBaseRequest request) {
+
     }
 
 
@@ -906,27 +1086,28 @@ public class DataVisualizationServer implements DataVisualizationApi {
         if (AuthUtils.getUser().getDefaultOid() != null) {
             wrapper.eq("org_id", AuthUtils.getUser().getDefaultOid());
         }
-        if (visualizationInfoMapper.exists(wrapper)) {
+        List<DataVisualizationInfo> existList = visualizationInfoMapper.selectList(wrapper);
+        if (CollectionUtils.isNotEmpty(existList) && existList.stream().anyMatch(item -> item.getName().equals(request.getName().trim()))) {
             DEException.throwException("当前名称已经存在");
         }
     }
 
-    public String getAbsPath(String id) {
-        CoreChartView coreChartView = coreChartViewMapper.selectById(id);
-        if (coreChartView == null) {
+    public String getAbsPath(Long id) {
+        ChartViewDTO viewDTO = chartViewManege.findChartViewAround(String.valueOf(id));
+        if (viewDTO == null) {
             return null;
         }
-        if (coreChartView.getSceneId() == null) {
-            return coreChartView.getTitle();
+        if (viewDTO.getPid() == null) {
+            return viewDTO.getTitle();
         }
-        List<DataVisualizationInfo> parents = getParents(coreChartView.getSceneId());
+        List<DataVisualizationInfo> parents = getParents(viewDTO.getPid());
         StringBuilder stringBuilder = new StringBuilder();
         parents.forEach(ele -> {
             if (ObjectUtils.isNotEmpty(ele)) {
                 stringBuilder.append(ele.getName()).append("/");
             }
         });
-        stringBuilder.append(coreChartView.getTitle());
+        stringBuilder.append(viewDTO.getTitle());
         return stringBuilder.toString();
     }
 
@@ -950,4 +1131,15 @@ public class DataVisualizationServer implements DataVisualizationApi {
         }
     }
 
+    public List<Long> getEnabledViewIds(Long dvId, String resourceTable) {
+        List<Long> result = new ArrayList<>();
+        DataVisualizationVO dvInfo = extDataVisualizationMapper.findDvInfo(dvId, null, resourceTable);
+        List<CoreChartView> views = extChartViewMapper.selectListCustom(dvId, resourceTable);
+        if (CollectionUtils.isNotEmpty(views) && dvInfo != null) {
+            String componentData = dvInfo.getComponentData();
+            result = views.stream().filter(item -> componentData.indexOf("\"id\":\"" + item.getId()) > 0).map(CoreChartView::getId).collect(Collectors.toList());
+
+        }
+        return result;
+    }
 }

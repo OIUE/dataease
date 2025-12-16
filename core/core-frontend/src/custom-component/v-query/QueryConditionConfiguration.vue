@@ -33,6 +33,7 @@ import {
   getThisEnd,
   getLastStart,
   getAround,
+  getAroundStart,
   getCustomRange
 } from './time-format-dayjs'
 import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapshot'
@@ -161,9 +162,10 @@ const datasetFieldList = computed(() => {
 const setCascadeDefault = val => {
   conditions.value.forEach(ele => {
     if (
-      ele.optionValueSource === 1 &&
-      [0, 2, 5].includes(+ele.displayType) &&
-      val.includes(ele.id)
+      (ele.optionValueSource === 1 &&
+        [0, 2, 5].includes(+ele.displayType) &&
+        val.includes(ele.id)) ||
+      [9].includes(+ele.displayType)
     ) {
       ele.selectValue = Array.isArray(ele.selectValue) ? [] : undefined
       ele.defaultValue = Array.isArray(ele.defaultValue) ? [] : undefined
@@ -506,6 +508,24 @@ const setTreeDefault = () => {
     if (tableId && !curComponent.value.treeDatasetId) {
       curComponent.value.treeDatasetId = tableId
       getOptions(curComponent.value.treeDatasetId, curComponent.value)
+    }
+  }
+}
+
+const setTreeDefaultBatch = ele => {
+  if (!!ele.checkedFields.length) {
+    let tableId = ''
+    fields.value.forEach(ele => {
+      if (
+        ele.checkedFields.includes(ele.componentId) &&
+        ele.checkedFieldsMap[ele.componentId] &&
+        !tableId
+      ) {
+        tableId = datasetFieldList.value.find(itx => itx.id === ele.componentId)?.tableId
+      }
+    })
+    if (tableId && !ele.treeDatasetId) {
+      ele.treeDatasetId = tableId
     }
   }
 }
@@ -1045,10 +1065,12 @@ const isInRange = (ele, startWindowTime, timeStamp) => {
     dynamicWindow,
     maximumSingleQuery,
     timeNumRange,
+    relativeToCurrentRange,
     relativeToCurrentTypeRange,
     aroundRange
   } = ele.timeRange || {}
   let isDynamicWindowTime = false
+
   const noTime = ele.timeGranularityMultiple.split('time').join('').split('range')[0]
   const queryTimeType = noTime === 'date' ? 'day' : (noTime as ManipulateType)
   if (startWindowTime && dynamicWindow) {
@@ -1067,7 +1089,7 @@ const isInRange = (ele, startWindowTime, timeStamp) => {
   }
   let startTime
   if (relativeToCurrent === 'custom') {
-    startTime = getAround(relativeToCurrentType, around === 'f' ? 'subtract' : 'add', timeNum)
+    startTime = getAroundStart(relativeToCurrentType, around === 'f' ? 'subtract' : 'add', timeNum)
   } else {
     switch (relativeToCurrent) {
       case 'thisYear':
@@ -1110,6 +1132,7 @@ const isInRange = (ele, startWindowTime, timeStamp) => {
         break
     }
   }
+
   const startValue = regularOrTrends === 'fixed' ? regularOrTrendsValue : startTime
   if (intervalType === 'start') {
     return startWindowTime < +new Date(startValue) || isDynamicWindowTime
@@ -1120,22 +1143,27 @@ const isInRange = (ele, startWindowTime, timeStamp) => {
   }
 
   if (intervalType === 'timeInterval') {
-    const startTime =
-      regularOrTrends === 'fixed'
-        ? new Date(
-            dayjs(new Date(regularOrTrendsValue[0])).startOf(noTime).format('YYYY/MM/DD HH:mm:ss')
-          )
-        : getAround(relativeToCurrentType, around === 'f' ? 'subtract' : 'add', timeNum)
-    const endTime =
-      regularOrTrends === 'fixed'
-        ? new Date(
-            dayjs(new Date(regularOrTrendsValue[1])).endOf(noTime).format('YYYY/MM/DD HH:mm:ss')
-          )
-        : getAround(
-            relativeToCurrentTypeRange,
-            aroundRange === 'f' ? 'subtract' : 'add',
-            timeNumRange
-          )
+    let endTime
+    if (relativeToCurrentRange === 'custom') {
+      startTime =
+        regularOrTrends === 'fixed'
+          ? new Date(
+              dayjs(new Date(regularOrTrendsValue[0])).startOf(noTime).format('YYYY/MM/DD HH:mm:ss')
+            )
+          : getAroundStart(relativeToCurrentType, around === 'f' ? 'subtract' : 'add', timeNum)
+      endTime =
+        regularOrTrends === 'fixed'
+          ? new Date(
+              dayjs(new Date(regularOrTrendsValue[1])).endOf(noTime).format('YYYY/MM/DD HH:mm:ss')
+            )
+          : getAround(
+              relativeToCurrentTypeRange,
+              aroundRange === 'f' ? 'subtract' : 'add',
+              timeNumRange
+            )
+    } else {
+      ;[startTime, endTime] = getCustomRange(relativeToCurrentRange)
+    }
 
     return (
       startWindowTime < +new Date(startTime) - 1000 ||
@@ -1149,21 +1177,27 @@ const CascadeDialog = defineAsyncComponent(() => import('./QueryCascade.vue'))
 const cascadeDialog = ref()
 const openCascadeDialog = () => {
   const cascadeMap = conditions.value
-    .filter(
-      ele =>
-        [0, 2, 5].includes(+ele.displayType) &&
-        ele.optionValueSource === 1 &&
-        !!ele.checkedFields?.length &&
-        !!Object.values(ele.checkedFieldsMap).filter(item => !!item).length
-    )
+    .filter(ele => {
+      return (
+        ([0, 2, 5].includes(+ele.displayType) &&
+          ele.optionValueSource === 1 &&
+          !!ele.checkedFields?.length &&
+          !!Object.values(ele.checkedFieldsMap).filter(item => !!item).length) ||
+        ([9].includes(+ele.displayType) && ele.treeFieldList?.length)
+      )
+    })
     .reduce((pre, next) => {
+      const isTree = [9].includes(+next.displayType)
+      const fieldId = isTree ? next.treeFieldList[0].id : next.field.id
+      const datasetId = isTree ? next.treeFieldList[0].datasetGroupId : next.dataset.id
       pre[next.id] = {
-        datasetId: next.dataset.id,
+        datasetId,
+        isTree,
         name: next.name,
         queryId: next.id,
-        fieldId: next.field.id,
+        fieldId: fieldId,
         deType: (datasetMap[next.dataset.id]?.fields?.dimensionList || next.dataset.fields).find(
-          ele => ele.id === next.field.id
+          ele => ele.id === fieldId
         )?.deType
       }
       return pre
@@ -1229,8 +1263,15 @@ const validate = () => {
       ele.defaultValueCheck &&
       ((Array.isArray(ele.defaultValue) && !ele.defaultValue.length) || !ele.defaultValue)
     ) {
-      ElMessage.error(t('report.filter.title'))
-      return true
+      if (ele.optionValueSource !== 1) {
+        ElMessage.error(t('report.filter.title'))
+        return true
+      }
+
+      if (!ele.defaultValueFirstItem) {
+        ElMessage.error(t('report.filter.title'))
+        return true
+      }
     }
 
     if (ele.displayType === '9') {
@@ -1242,7 +1283,10 @@ const validate = () => {
         return true
       }
       if (!ele.treeDatasetId) {
-        ElMessage.error(t('data_set.dataset_cannot_be'))
+        setTreeDefaultBatch(ele)
+        if (!ele.treeDatasetId) {
+          ElMessage.error(t('data_set.dataset_cannot_be'))
+        }
         return true
       }
 
@@ -1413,6 +1457,17 @@ const validate = () => {
       }
     }
 
+    if (ele.displayType === '2') {
+      if (!ele.defaultValueCheck) return false
+      if (
+        (Array.isArray(ele.defaultValue) && !ele.defaultValue.length) ||
+        (!Array.isArray(ele.defaultValue) && ['', undefined, null].includes(ele.defaultValue))
+      ) {
+        ElMessage.error(t('report.filter.title'))
+        return true
+      }
+    }
+
     if (+ele.displayType === 7) {
       if (!ele.defaultValueCheck) return false
       if (ele.timeType === 'fixed') {
@@ -1469,6 +1524,8 @@ const validate = () => {
         return true
       }
       if (!ele.setTimeRange) return false
+      console.log(startTime, endTime)
+
       if (
         isInRange(
           ele,
@@ -1495,7 +1552,11 @@ const validate = () => {
       return true
     }
 
-    if (!['9', '22'].includes(ele.displayType) && ele.optionValueSource === 1 && !ele.field.id) {
+    if (
+      !['9', '22', '1', '7'].includes(ele.displayType) &&
+      ele.optionValueSource === 1 &&
+      !ele.field.id
+    ) {
       ElMessage.error(
         !ele.dataset?.id ? t('v_query.option_value_field') : t('v_query.the_data_set')
       )
@@ -1508,11 +1569,13 @@ const handleBeforeClose = () => {
   defaultConfigurationRef.value?.mult()
   defaultConfigurationRef.value?.single()
   handleDialogClick()
-  curComponent.value.id = ''
+  if (curComponent.value) {
+    curComponent.value.id = ''
+  }
   relationshipChartIndex.value = 0
   dialogVisible.value = false
 }
-const emits = defineEmits(['queryData'])
+const emits = defineEmits(['queryData', 'reRenderAll'])
 const confirmClick = () => {
   if (validate()) return
   defaultConfigurationRef.value?.mult()
@@ -1527,6 +1590,7 @@ const confirmClick = () => {
         : curComponent.value.multiple
     )
   })
+  const oldArr = cloneDeep(unref(queryElement.value.propValue))
   queryElement.value.propValue = []
   nextTick(() => {
     conditions.value.forEach(itx => {
@@ -1544,7 +1608,10 @@ const confirmClick = () => {
     cascadeArr = []
     queryElement.value.propValue = cloneDeep(conditions.value)
     snapshotStore.recordSnapshotCache('confirmClick')
+    curComponent.value.id = ''
+    relationshipChartIndex.value = 0
     nextTick(() => {
+      emits('reRenderAll', oldArr, cloneDeep(unref(conditions)))
       emits('queryData')
     })
   })
@@ -1726,6 +1793,7 @@ const parameterCompletion = ele => {
     defaultNumValueEnd: null,
     numValueEnd: null,
     numValueStart: null,
+    displayFormat: 0,
     timeRange: {
       intervalType: 'none',
       dynamicWindow: false,
@@ -1742,6 +1810,7 @@ const parameterCompletion = ele => {
     },
     oldTreeLoad: false,
     treeCheckedList: [],
+    defaultValueFirstItem: false,
     treeFieldList: []
   }
   Object.entries(attributes).forEach(([key, val]) => {
@@ -1854,7 +1923,7 @@ const handleCondition = (item, idx = 0) => {
   nextTick(() => {
     if (curComponent.value.displayType === '9') {
       oldDisplayType = '9'
-      handleRelationshipChart(idx)
+      handleRelationshipChart(idx, true)
       if (!curComponent.value.treeDatasetId && fields.value?.length) {
         nextTick(() => {
           setTreeDefault()
@@ -1877,13 +1946,17 @@ const getOptions = (id, component) => {
 const handleSortChange = () => {
   handleFieldChange()
   curComponent.value.sortList = []
-  resetSort()
+  if (sortComputed.value) {
+    curComponent.value.sort = ''
+  }
 }
 
 const resetSort = () => {
   if (sortComputed.value) {
     curComponent.value.sort = ''
   }
+  if (!curComponent.value.defaultValueCheck) return
+  curComponent.value.defaultValue = curComponent.value.multiple ? [] : undefined
 }
 
 const customSortFilterRef = ref()
@@ -1910,7 +1983,7 @@ const sortComputed = computed(() => {
 const treeDialog = ref()
 const startTreeDesign = () => {
   treeDialog.value.init(
-    curComponent.value.dataset.fields.filter(ele => ele.groupType === 'd'),
+    curComponent.value.dataset.fields.filter(ele => ele.groupType === 'd' && ele.deType === 0),
     curComponent.value.treeFieldList
   )
 }
@@ -2109,6 +2182,10 @@ const relativeToCurrentListRange = computed(() => {
         {
           label: t('v_query.last_12_months'),
           value: 'LastTwelveMonths'
+        },
+        {
+          label: t('common.to_this_month'),
+          value: 'YearToThisMonth'
         }
       ]
       break
@@ -2134,6 +2211,10 @@ const relativeToCurrentListRange = computed(() => {
         {
           label: t('v_query.year_to_date'),
           value: 'yearBeginning'
+        },
+        {
+          label: t('common.month_to_yesterday'),
+          value: 'monthToYesterday'
         }
       ]
       break
@@ -2176,6 +2257,8 @@ const timeGranularityMultipleChange = (val: string) => {
     curComponent.value.relativeToCurrentRange = relativeToCurrentListRange.value[0]?.value
   }
 
+  if (curComponent.value.timeRange) return
+
   curComponent.value.timeRange = {
     intervalType: 'none',
     dynamicWindow: false,
@@ -2195,6 +2278,7 @@ const timeGranularityMultipleChange = (val: string) => {
 watch(
   () => showError.value,
   val => {
+    if (!curComponent.value) return
     curComponent.value.showError = val
   }
 )
@@ -2217,8 +2301,8 @@ const setRelationBack = () => {
     checkedFieldsMap: cloneDeep(curComponent.value.checkedFieldsMap)
   }
 }
-const handleRelationshipChart = index => {
-  if (curComponent.value.treeCheckedList?.length) {
+const handleRelationshipChart = (index, initShip = false) => {
+  if (curComponent.value.treeCheckedList?.length && !initShip) {
     curComponent.value.treeCheckedList[relationshipChartIndex.value] = {
       checkedFields: [...curComponent.value.checkedFields],
       checkedFieldsMap: cloneDeep(curComponent.value.checkedFieldsMap)
@@ -2280,9 +2364,9 @@ const dsSelectProps = {
 }
 
 const dfs = arr => {
-  return arr.filter(ele => {
+  return (arr || []).filter(ele => {
     if (!!ele.children?.length && !ele.leaf) {
-      ele.children = dfs(ele.children)
+      ele.children = dfs(ele.children) || []
       return !!ele.children?.length
     }
     return ele.leaf
@@ -2899,8 +2983,17 @@ defineExpose({
                 {{ t('v_query.of_option_values') }}
               </div>
               <div class="value">
-                <el-radio-group class="larger-radio" v-model="curComponent.resultMode">
-                  <el-radio :label="0">{{ t('login.default_login') }}</el-radio>
+                <el-radio-group class="larger-radio icon-info" v-model="curComponent.resultMode">
+                  <el-radio :label="0"
+                    >{{ t('login.default_login') }}
+                    <el-tooltip effect="dark" :content="t('common.up_to_options')" placement="top">
+                      <el-icon style="margin-left: 4px; color: #646a73">
+                        <icon name="icon_info_outlined"
+                          ><icon_info_outlined class="svg-icon"
+                        /></icon>
+                      </el-icon> </el-tooltip
+                  ></el-radio>
+
                   <el-radio :label="1">{{ t('chart.result_mode_all') }}</el-radio>
                 </el-radio-group>
               </div>
@@ -3298,36 +3391,38 @@ defineExpose({
                       </el-button>
                     </template>
                     <div class="manual-input-container">
-                      <div class="title">{{ t('auth.manual_input') }}</div>
-                      <div class="select-value">
-                        <span> {{ t('data_fill.form.option_value') }} </span>
-                        <div :key="index" v-for="(_, index) in valueSource" class="select-item">
-                          <el-input
-                            maxlength="64"
-                            v-if="curComponent.displayType === '2'"
-                            @blur="weightlessness"
-                            v-model.number="valueSource[index]"
-                          ></el-input>
-                          <el-input
-                            maxlength="64"
-                            v-else
-                            @blur="weightlessness"
-                            v-model="valueSource[index]"
-                          ></el-input>
-                          <el-button
-                            v-if="valueSource.length !== 1"
-                            @click="valueSource.splice(index, 1)"
-                            class="value"
-                            text
-                          >
-                            <template #icon>
-                              <Icon name="icon_delete-trash_outlined"
-                                ><icon_deleteTrash_outlined class="svg-icon"
-                              /></Icon>
-                            </template>
-                          </el-button>
+                      <el-scrollbar>
+                        <div class="title">{{ t('auth.manual_input') }}</div>
+                        <div class="select-value">
+                          <span> {{ t('data_fill.form.option_value') }} </span>
+                          <div :key="index" v-for="(_, index) in valueSource" class="select-item">
+                            <el-input
+                              maxlength="64"
+                              v-if="curComponent.displayType === '2'"
+                              @blur="weightlessness"
+                              v-model.number="valueSource[index]"
+                            ></el-input>
+                            <el-input
+                              maxlength="64"
+                              v-else
+                              @blur="weightlessness"
+                              v-model="valueSource[index]"
+                            ></el-input>
+                            <el-button
+                              v-if="valueSource.length !== 1"
+                              @click="valueSource.splice(index, 1)"
+                              class="value"
+                              text
+                            >
+                              <template #icon>
+                                <Icon name="icon_delete-trash_outlined"
+                                  ><icon_deleteTrash_outlined class="svg-icon"
+                                /></Icon>
+                              </template>
+                            </el-button>
+                          </div>
                         </div>
-                      </div>
+                      </el-scrollbar>
                       <div class="add-btn">
                         <el-button @click="valueSource.push('')" text>
                           <template #icon>
@@ -3354,6 +3449,24 @@ defineExpose({
                   </div>
                 </div>
               </div>
+              <template v-if="['0', '2', '5'].includes(curComponent.displayType)">
+                <div
+                  class="label ellipsis"
+                  :title="t('common.display_formats')"
+                  style="margin-top: 10.5px"
+                >
+                  {{ t('common.display_formats') }}
+                </div>
+                <div class="value" style="margin-top: 10.5px">
+                  <el-radio-group
+                    class="larger-radio icon-info"
+                    v-model="curComponent.displayFormat"
+                  >
+                    <el-radio :label="0">{{ t('common.dropdown_display') }} </el-radio>
+                    <el-radio :label="1">{{ t('common.tile_display') }}</el-radio>
+                  </el-radio-group>
+                </div>
+              </template>
               <div
                 class="label ellipsis"
                 :title="t('v_query.of_option_values')"
@@ -3362,8 +3475,16 @@ defineExpose({
                 {{ t('v_query.of_option_values') }}
               </div>
               <div class="value" style="margin-top: 10.5px">
-                <el-radio-group class="larger-radio" v-model="curComponent.resultMode">
-                  <el-radio :label="0">{{ t('chart.default') }}</el-radio>
+                <el-radio-group class="larger-radio icon-info" v-model="curComponent.resultMode">
+                  <el-radio :label="0"
+                    >{{ t('chart.default') }}
+                    <el-tooltip effect="dark" :content="t('common.up_to_options')" placement="top">
+                      <el-icon style="margin-left: 4px; color: #646a73">
+                        <icon name="icon_info_outlined"
+                          ><icon_info_outlined class="svg-icon"
+                        /></icon>
+                      </el-icon> </el-tooltip
+                  ></el-radio>
                   <el-radio :label="1">{{ t('data_set.all') }}</el-radio>
                 </el-radio-group>
               </div>
@@ -3481,7 +3602,7 @@ defineExpose({
   min-width: 210px !important;
 }
 .ed-select-dropdown__header {
-  padding: 0 8px;
+  padding: 0 8px !important;
   .params-select--header {
     --ed-tabs-header-height: 32px;
     .ed-tabs__item {
@@ -3533,11 +3654,11 @@ defineExpose({
     justify-content: center;
   }
 
-  .ed-input .ed-select__prefix--light {
-    border-right: none;
-    padding: 0;
+  .ed-select__prefix {
     font-size: 16px;
-    margin-right: 4px;
+    &::after {
+      display: none;
+    }
   }
   .container {
     font-size: 14px;
@@ -3667,14 +3788,15 @@ defineExpose({
           margin-bottom: 8px;
 
           .field-select--input {
-            .ed-select-tags-wrapper.has-prefix {
-              margin-left: 25px;
+            .ed-select__prefix {
+              padding-right: 0;
             }
+
             .ed-select__input {
               margin-left: 6px !important;
             }
             .ed-tag {
-              max-width: 52px;
+              max-width: 46px !important;
               .ed-tag__close {
                 margin-left: 2px;
               }
@@ -3789,7 +3911,7 @@ defineExpose({
           flex-wrap: wrap;
           .search-tree {
             width: 100%;
-            height: 200px;
+            height: 216px;
             margin-top: 8px;
             position: relative;
             padding: 16px;
@@ -4085,7 +4207,6 @@ defineExpose({
     .select-value {
       padding-left: 16px;
       max-height: 246px;
-      overflow-y: auto;
       .value {
         color: #646a73;
         margin-left: 6px;
@@ -4129,6 +4250,12 @@ defineExpose({
   }
 }
 .larger-radio {
+  &.icon-info {
+    .ed-radio__label {
+      display: flex;
+      align-items: center;
+    }
+  }
   .ed-radio__inner {
     width: 16px;
     height: 16px;

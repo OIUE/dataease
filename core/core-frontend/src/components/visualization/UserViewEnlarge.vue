@@ -7,6 +7,8 @@
     width="70vw"
     trigger="click"
     class="userViewEnlarge-class"
+    :style="dialogStyle"
+    @close="handleClose"
   >
     <template #header v-if="!isIframe">
       <div class="header-title">
@@ -31,19 +33,15 @@
             class="m-button"
             v-if="optType === 'enlarge' && exportPermissions[0]"
             link
-            size="middle"
             @click="downloadViewImage"
           >
-            <el-icon color="#1F2329" size="16" style="margin-right: 3px"
-              ><icon_download_outlined
-            /></el-icon>
+            <el-icon size="16" style="margin-right: 3px"><icon_download_outlined /></el-icon>
             {{ t('chart.export_img') }}
           </el-button>
           <el-button
             class="m-button"
             v-if="optType === 'details' && exportPermissions[1]"
             link
-            size="middle"
             :loading="exportLoading"
             :disabled="
               requestStore.loadingMap[permissionStore.currentPath] > 0 ||
@@ -51,16 +49,13 @@
             "
             @click="downloadViewDetails('view')"
           >
-            <el-icon color="#1F2329" size="16" style="margin-right: 3px"
-              ><icon_download_outlined
-            /></el-icon>
+            <el-icon size="16" style="margin-right: 3px"><icon_download_outlined /></el-icon>
             {{ t('chart.export_excel') }}
           </el-button>
           <el-button
             class="m-button"
             v-if="optType === 'details' && exportPermissions[2]"
             link
-            size="middle"
             :loading="exportLoading"
             @click="downloadViewDetails('dataset')"
             :disabled="
@@ -68,16 +63,13 @@
               state.dataFrom === 'template'
             "
           >
-            <el-icon color="#1F2329" size="16" style="margin-right: 3px"
-              ><icon_download_outlined
-            /></el-icon>
+            <el-icon size="16" style="margin-right: 3px"><icon_download_outlined /></el-icon>
             {{ t('chart.export_raw_details') }}
           </el-button>
           <el-button
             class="m-button"
             v-if="optType === 'details' && exportPermissions[2] && viewInfo.type === 'table-pivot'"
             link
-            size="middle"
             :loading="exportLoading"
             @click="exportAsFormattedExcel"
           >
@@ -162,7 +154,6 @@
 <script setup lang="ts">
 import ComponentWrapper from '@/components/data-visualization/canvas/ComponentWrapper.vue'
 import { computed, h, nextTick, reactive, ref } from 'vue'
-import { toPng } from 'html-to-image'
 import { useI18n } from '@/hooks/web/useI18n'
 import { deepCopy } from '@/utils/utils'
 import icon_download_outlined from '@/assets/svg/icon_download_outlined.svg'
@@ -171,7 +162,7 @@ import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { exportExcelDownload } from '@/views/chart/components/js/util'
 import { storeToRefs } from 'pinia'
 import { RefreshLeft } from '@element-plus/icons-vue'
-import { assign } from 'lodash-es'
+import { assign, merge } from 'lodash-es'
 import { useEmitt } from '@/hooks/web/useEmitt'
 import { ElMessage, ElButton } from 'element-plus-secondary'
 import { exportPivotExcel } from '@/views/chart/components/js/panel/common/common_table'
@@ -182,6 +173,8 @@ import { getCanvasStyle } from '@/utils/style'
 import { exportPermission } from '@/utils/utils'
 import EmptyBackground from '../empty-background/src/EmptyBackground.vue'
 import { supportExtremumChartType } from '@/views/chart/components/js/extremumUitl'
+import ChartCarouselTooltip from '@/views/chart/components/js/g2plot_tooltip_carousel'
+import html2canvas from 'html2canvas'
 const downLoading = ref(false)
 const dvMainStore = dvMainStoreWithOut()
 const dialogShow = ref(false)
@@ -194,7 +187,7 @@ const { t } = useI18n()
 const optType = ref(null)
 const chartComponentDetails = ref(null)
 const chartComponentDetails2 = ref(null)
-const { dvInfo, editMode, isIframe, canvasStyleData } = storeToRefs(dvMainStore)
+const { dvInfo, isIframe, canvasStyleData } = storeToRefs(dvMainStore)
 const exportLoading = ref(false)
 const sourceViewType = ref()
 const activeName = ref('left')
@@ -208,11 +201,11 @@ const DETAIL_CHART_ATTR: DeepPartial<ChartObj> = {
       tablePageMode: 'pull'
     },
     tableHeader: {
-      tableHeaderBgColor: '#F8F8F9',
+      tableHeaderBgColor: 'rgba(255,255,255,0.3)',
       tableHeaderFontColor: '#7C7E81'
     },
     tableCell: {
-      tableItemBgColor: '#FFFFFF',
+      tableItemBgColor: 'rgba(255,255,255,0)',
       tableFontColor: '#7C7E81',
       enableTableCrossBG: false,
       mergeCells: false
@@ -242,6 +235,13 @@ const DETAIL_TABLE_ATTR: DeepPartial<ChartObj> = {
   },
   showPosition: 'dialog'
 }
+
+const dialogStyle = computed(() => {
+  return [
+    { '--ed-dialog-bg-color': canvasStyleData.value.dialogBackgroundColor },
+    { '--ed-dialog__de-text': canvasStyleData.value.dialogButton }
+  ]
+})
 
 const exportPermissions = computed(() =>
   exportPermission(dvInfo.value['weight'], dvInfo.value['ext'])
@@ -316,6 +316,10 @@ const dialogInit = (canvasStyle, view, item, opt, params = { scale: 0.5 }) => {
       assign(viewInfo.value, DETAIL_CHART_ATTR)
       viewInfo.value.xAxis.forEach(i => (i.hide = false))
       viewInfo.value.yAxis.forEach(i => (i.hide = false))
+      viewInfo.value['customAttr']['tableHeader']['tableHeaderFontColor'] =
+        canvasStyleData.value.dialogButton
+      viewInfo.value['customAttr']['tableCell']['tableFontColor'] =
+        canvasStyleData.value.dialogButton
     } else {
       assign(viewInfo.value, DETAIL_TABLE_ATTR)
     }
@@ -323,6 +327,8 @@ const dialogInit = (canvasStyle, view, item, opt, params = { scale: 0.5 }) => {
   }
   nextTick(() => {
     initWatermark()
+    ChartCarouselTooltip.paused()
+    useEmitt().emitter.emit('showEnlargeDialog', true)
   })
 }
 
@@ -359,7 +365,7 @@ const downloadViewImage = () => {
 
 const downloadViewDetails = (downloadType = 'view') => {
   const viewDataInfo = dvMainStore.getViewDataDetails(viewInfo.value.id)
-  const viewInfoSource = dvMainStore.getViewDetails(viewInfo.value.id)
+  const viewInfoSource = deepCopy(dvMainStore.getViewDetails(viewInfo.value.id))
   if (!viewDataInfo) {
     ElMessage.error(t('chart.field_is_empty_export_error'))
     return
@@ -374,7 +380,7 @@ const downloadViewDetails = (downloadType = 'view') => {
     busiFlag: dvInfo.value.type
   }
   exportLoading.value = true
-  exportExcelDownload(chart, () => {
+  exportExcelDownload(chart, dvInfo.value.name, () => {
     openMessageLoading(exportData)
   })
   exportLoading.value = false
@@ -422,7 +428,7 @@ const openMessageLoading = cb => {
 const mapChartTypes = ['bubble-map', 'flow-map', 'heat-map', 'map', 'symbolic-map']
 const htmlToImage = () => {
   downLoading.value = mapChartTypes.includes(viewInfo.value.type) ? false : true
-  useEmitt().emitter.emit('renderChart-' + viewInfo.value.id)
+  useEmitt().emitter.emit('renderChart-viewDialog-' + viewInfo.value.id)
   useEmitt().emitter.emit('l7-prepare-picture', viewInfo.value.id)
   // 表格和支持最值图表的渲染时间为2000毫秒，其他图表为500毫秒。
   const renderTime =
@@ -432,22 +438,26 @@ const htmlToImage = () => {
       : 500
   setTimeout(() => {
     initWatermark()
-    toPng(viewContainer.value)
-      .then(dataUrl => {
+    html2canvas(viewContainer.value)
+      .then(canvas => {
+        const dom = document.body.appendChild(canvas)
+        dom.style.display = 'none'
+        document.body.removeChild(dom)
+        const dataUrl = dom.toDataURL('image/png', 1)
         downLoading.value = false
         const a = document.createElement('a')
         a.setAttribute('download', viewInfo.value.title)
         a.href = dataUrl
         a.click()
         useEmitt().emitter.emit('l7-unprepare-picture', viewInfo.value.id)
-        useEmitt().emitter.emit('renderChart-' + viewInfo.value.id)
+        useEmitt().emitter.emit('renderChart-viewDialog-' + viewInfo.value.id)
         initWatermark()
       })
       .catch(error => {
         downLoading.value = false
         initWatermark()
         useEmitt().emitter.emit('l7-unprepare-picture', viewInfo.value.id)
-        useEmitt().emitter.emit('renderChart-' + viewInfo.value.id)
+        useEmitt().emitter.emit('renderChart-viewDialog-' + viewInfo.value.id)
         console.error('oops, something went wrong!', error)
       })
   }, renderTime)
@@ -456,7 +466,10 @@ const htmlToImage = () => {
 const initWatermark = () => {
   activeWatermarkCheckUser('enlarge-inner-content', 'canvas-main', state.scale)
 }
-
+const handleClose = () => {
+  useEmitt().emitter.emit('showEnlargeDialog', false)
+  ChartCarouselTooltip.closeEnlargeDialogDestroy(viewInfo.value.id)
+}
 defineExpose({
   dialogInit
 })
@@ -464,6 +477,9 @@ defineExpose({
 
 <style lang="less">
 .userViewEnlarge-class {
+  .ed-dialog__close {
+    color: var(--ed-dialog__de-text) !important;
+  }
   .ed-dialog__header {
     display: flex;
     flex-direction: row;
@@ -480,6 +496,7 @@ defineExpose({
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
+    color: var(--ed-dialog__de-text);
 
     font-size: 16px;
     font-weight: 500;
@@ -492,10 +509,16 @@ defineExpose({
   .pixel-select {
     width: 125px;
     margin-right: 8px;
+    :deep(.ed-select__wrapper) {
+      background-color: rgba(255, 255, 255, 0) !important;
+    }
+    :deep(.ed-select__placeholder) {
+      color: var(--ed-dialog__de-text);
+    }
   }
 
   .m-button {
-    color: #1f2329;
+    color: var(--ed-dialog__de-text);
     font-size: 14px;
     font-style: normal;
     font-weight: 400;
@@ -508,7 +531,8 @@ defineExpose({
 
     &:not(.is-disabled):focus,
     &:not(.is-disabled):hover {
-      color: #1f2329;
+      color: var(--ed-dialog__de-text) !important;
+      opacity: 0.5;
       border-color: transparent;
       background-color: rgba(31, 35, 41, 0.1);
     }

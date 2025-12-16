@@ -2,6 +2,7 @@ package io.dataease.system.manage;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import io.dataease.api.system.request.OnlineMapEditor;
+import io.dataease.api.system.request.SQLBotConfigCreator;
 import io.dataease.api.system.vo.SettingItemVO;
 import io.dataease.api.system.vo.ShareBaseVO;
 import io.dataease.datasource.server.DatasourceServer;
@@ -14,12 +15,12 @@ import io.dataease.utils.CommonBeanFactory;
 import io.dataease.utils.IDUtils;
 import io.dataease.utils.SystemSettingUtils;
 import jakarta.annotation.Resource;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.CollectionUtils;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -167,18 +168,65 @@ public class SysParameterManage {
 
     @Transactional
     public void saveGroup(List<SettingItemVO> vos, String groupKey) {
-        QueryWrapper<CoreSysSetting> queryWrapper = new QueryWrapper<>();
-        queryWrapper.likeRight("pkey", groupKey);
-        coreSysSettingMapper.delete(queryWrapper);
         List<CoreSysSetting> sysSettings = vos.stream().filter(vo -> !SystemSettingUtils.xpackSetting(vo.getPkey())).map(item -> {
             CoreSysSetting sysSetting = BeanUtils.copyBean(new CoreSysSetting(), item);
             sysSetting.setId(IDUtils.snowID());
             return sysSetting;
         }).collect(Collectors.toList());
-        extCoreSysSettingMapper.saveBatch(sysSettings);
+        if (CollectionUtils.isNotEmpty(sysSettings)) {
+            QueryWrapper<CoreSysSetting> queryWrapper = new QueryWrapper<>();
+            sysSettings.forEach(sysSetting -> {
+                queryWrapper.clear();
+                queryWrapper.eq("pkey", sysSetting.getPkey());
+                coreSysSettingMapper.delete(queryWrapper);
+            });
+            extCoreSysSettingMapper.saveBatch(sysSettings);
+        }
         datasourceServer.addJob(sysSettings);
     }
 
+    public void saveSqlBotConfig(SQLBotConfigCreator configVO) {
+        List<CoreSysSetting> configList = new ArrayList<>();
+        String key = "sqlbot.";
+        CoreSysSetting domainVo = new CoreSysSetting();
+        domainVo.setPkey(key + "domain");
+        domainVo.setPval(configVO.getDomain());
+        domainVo.setType("text");
+        domainVo.setSort(0);
+        domainVo.setId(IDUtils.snowID());
+        configList.add(domainVo);
+
+        CoreSysSetting idVo = new CoreSysSetting();
+        idVo.setPkey(key + "id");
+        idVo.setPval(configVO.getId());
+        idVo.setType("text");
+        idVo.setSort(0);
+        idVo.setId(IDUtils.snowID());
+        configList.add(idVo);
+
+        CoreSysSetting enabledVo = new CoreSysSetting();
+        enabledVo.setPkey(key + "enabled");
+        enabledVo.setPval(configVO.getEnabled().toString());
+        enabledVo.setType("text");
+        enabledVo.setSort(0);
+        enabledVo.setId(IDUtils.snowID());
+        configList.add(enabledVo);
+
+        CoreSysSetting validVo = new CoreSysSetting();
+        validVo.setPkey(key + "valid");
+        validVo.setPval(configVO.getValid().toString());
+        validVo.setType("text");
+        validVo.setSort(0);
+        validVo.setId(IDUtils.snowID());
+        configList.add(validVo);
+
+
+        QueryWrapper<CoreSysSetting> queryWrapper = new QueryWrapper<>();
+        queryWrapper.likeRight("pkey", key);
+        coreSysSettingMapper.delete(queryWrapper);
+
+        extCoreSysSettingMapper.saveBatch(configList);
+    }
 
     @XpackInteract(value = "perSetting", before = false)
     @Transactional

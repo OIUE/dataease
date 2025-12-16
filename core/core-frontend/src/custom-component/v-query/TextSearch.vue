@@ -1,6 +1,18 @@
 <script lang="ts" setup>
-import { toRefs, onBeforeMount, type PropType, type Ref, inject, computed, nextTick } from 'vue'
+import {
+  toRefs,
+  onBeforeMount,
+  ref,
+  onMounted,
+  onBeforeUnmount,
+  type PropType,
+  type Ref,
+  inject,
+  computed,
+  nextTick
+} from 'vue'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
+import eventBus from '@/utils/eventBus'
 import { storeToRefs } from 'pinia'
 import { useI18n } from '@/hooks/web/useI18n'
 interface SelectConfig {
@@ -109,13 +121,30 @@ const lineWidth = computed(() => {
   return { width: getCustomWidth() - 15 + 'px', background: customStyle.border }
 })
 
-const handleKeyEnter = () => {
+const handleKeyEnter = ($event: any = {}) => {
+  if ($event?.isComposing) {
+    return
+  }
   handleValueChange()
 }
 
 const handleInnerMouseDown = e => {
   e.stopPropagation()
 }
+const pre = ref()
+const next = ref()
+
+const componentClick = () => {
+  pre.value?.blur()
+  next.value?.blur()
+}
+
+onMounted(() => {
+  eventBus.on('componentClick', componentClick)
+})
+onBeforeUnmount(() => {
+  eventBus.off('componentClick', componentClick)
+})
 </script>
 
 <template>
@@ -140,7 +169,8 @@ const handleInnerMouseDown = e => {
         :style="selectStyle"
         :placeholder="placeholderText"
         @blur="handleValueChange"
-        @keydown.enter="handleKeyEnter"
+        ref="pre"
+        @keydown.enter.exact.prevent="($event: any) => handleKeyEnter($event)"
         class="condition-value-input"
         v-model="config.conditionValueF"
       />
@@ -164,8 +194,9 @@ const handleInnerMouseDown = e => {
       <el-input
         :style="selectStyle"
         @blur="handleValueChange"
+        ref="next"
         :placeholder="placeholderText"
-        @keydown.enter="handleKeyEnter"
+        @keydown.enter.exact.prevent="($event: any) => handleKeyEnter($event)"
         class="condition-value-input"
         v-model="config.conditionValueS"
       />
@@ -181,7 +212,8 @@ const handleInnerMouseDown = e => {
   .condition-type {
     display: flex;
     position: relative;
-    :deep(.ed-input__wrapper) {
+    :deep(.ed-input__wrapper),
+    :deep(.ed-select__wrapper) {
       border: none;
       border-radius: 0;
       box-shadow: none !important;

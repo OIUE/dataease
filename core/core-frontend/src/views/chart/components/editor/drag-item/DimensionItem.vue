@@ -67,7 +67,7 @@ const emit = defineEmits([
 
 const { item } = toRefs(props)
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes || 'dark'
 })
 const showValueFormatter = computed<boolean>(() => {
   return (
@@ -192,17 +192,25 @@ const showCustomSort = item => {
   }
   return !item.chartId && (item.deType === 0 || item.deType === 5)
 }
-const showSort = () => {
+
+const NOT_SUPPORT_SORT = ['word-cloud', 'stock-line', 'treemap', 'circle-packing']
+const showSort = computed(() => {
   const { type: chartType } = props.chart
   const { type: propType } = props
-  const notShowSort = ['word-cloud', 'stock-line'].includes(chartType)
+  const notShowSort = NOT_SUPPORT_SORT.includes(chartType)
   if (notShowSort || propType === 'extColor') {
     return false
   }
   const isChartMix = chartType.includes('chart-mix')
   const isDimensionType = ['dimension', 'dimensionStack', 'dimensionExt'].includes(propType)
   return !isChartMix || isDimensionType
-}
+})
+const showSortPriority = computed(() => {
+  if (props.chart.type.includes('chart-mix')) {
+    return false
+  }
+  return showSort.value
+})
 const toggleHide = () => {
   item.value.index = props.index
   item.value.hide = !item.value.hide
@@ -227,17 +235,17 @@ onMounted(() => {
         :style="{ backgroundColor: tagType + '0a', border: '1px solid ' + tagType }"
       >
         <span v-if="type !== 'extColor'" style="display: flex; color: #646a73">
-          <el-icon v-if="'asc' === item.sort && showSort()">
+          <el-icon v-if="'asc' === item.sort && showSort">
             <Icon name="icon_sort-a-to-z_outlined"
               ><icon_sortAToZ_outlined class="svg-icon"
             /></Icon>
           </el-icon>
-          <el-icon v-if="'desc' === item.sort && showSort()">
+          <el-icon v-if="'desc' === item.sort && showSort">
             <Icon name="icon_sort-z-to-a_outlined"
               ><icon_sortZToA_outlined class="svg-icon"
             /></Icon>
           </el-icon>
-          <el-icon v-if="'custom_sort' === item.sort && showSort()">
+          <el-icon v-if="'custom_sort' === item.sort && showSort">
             <Icon name="icon_sort_outlined"><icon_sort_outlined class="svg-icon" /></Icon>
           </el-icon>
           <el-icon>
@@ -284,10 +292,11 @@ onMounted(() => {
             class="item-span-style"
             :class="{
               'hidden-status': showHideIcon,
-              'sort-status': showSort() && item.sort !== 'none'
+              'sort-status': showSort && item.sort !== 'none'
             }"
           >
             <span class="item-name">{{ item.chartShowName ? item.chartShowName : item.name }}</span>
+            <span :data-id="item.id" class="node-id_private"></span>
           </span>
         </el-tooltip>
         <el-icon v-if="showHideIcon" style="margin-left: 4px">
@@ -313,7 +322,7 @@ onMounted(() => {
           class="drop-style"
           :class="themes === 'dark' ? 'dark-dimension-quota' : ''"
         >
-          <el-dropdown-item @click.prevent v-if="showSort()">
+          <el-dropdown-item @click.prevent v-if="showSort">
             <el-dropdown
               :effect="themes"
               popper-class="data-dropdown_popper_mr9"
@@ -400,7 +409,7 @@ onMounted(() => {
             </el-dropdown>
           </el-dropdown-item>
           <el-dropdown-item
-            v-if="showSort()"
+            v-if="showSortPriority"
             :command="beforeClickItem('sortPriority')"
             class="menu-item-padding"
           >
@@ -739,7 +748,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   background-color: #3370ff0a;
-  border: 1px solid var(--ed-color-primary);
+  border: 1px solid var(--ed-color-primary) !important;
 }
 
 .item-axis:hover {
@@ -837,8 +846,16 @@ span {
     background-color: rgba(31, 35, 41, 0.1);
   }
   &.dark-dimension-quota {
+    background-color: #292929;
+    border: 1px solid #434343;
+    :deep(.ed-dropdown-menu__item--divided) {
+      border-color: #ebebeb26;
+    }
     .inner-dropdown-menu {
       color: rgba(235, 235, 235, 1);
+    }
+    :deep(.ed-dropdown-menu__item:not(.is-disabled):hover) {
+      background-color: #ebebeb1a;
     }
     :deep(.ed-dropdown-menu__item) {
       color: rgba(235, 235, 235, 1);

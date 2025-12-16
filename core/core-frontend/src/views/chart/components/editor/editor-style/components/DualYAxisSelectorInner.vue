@@ -32,7 +32,7 @@ const props = withDefaults(
 const predefineColors = COLOR_PANEL
 const typeList = formatterType
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 const state = reactive({
   axisForm: JSON.parse(JSON.stringify(DEFAULT_YAXIS_STYLE))
@@ -569,7 +569,7 @@ onMounted(() => {
                     v-model="state.axisForm.axisLabelFormatter.unit"
                     :placeholder="t('chart.pls_select_field')"
                     size="small"
-                    @change="changeAxisStyle('axisLabelFormatter.unit')"
+                    @change="changeAxisStyle('axisLabelFormatter')"
                   >
                     <el-option
                       v-for="item in getUnitTypeList(

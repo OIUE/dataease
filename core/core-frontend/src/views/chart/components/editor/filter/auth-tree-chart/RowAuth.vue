@@ -172,6 +172,7 @@ const dfsInit = arr => {
         fieldId,
         filterType,
         term,
+        timeType,
         value,
         field
       } = ele
@@ -181,6 +182,7 @@ const dfsInit = arr => {
         fieldId,
         filterType,
         term,
+        timeType,
         timeValue: getTimeValue(dynamicTimeSetting),
         filterTypeTime,
         dynamicTimeSetting,
@@ -204,6 +206,7 @@ const dfsSubmit = arr => {
         fieldId: '',
         filterType: '',
         term: '',
+        timeType: 'year',
         type: 'tree',
         value: '',
         filterTypeTime: 'dateValue',
@@ -220,6 +223,7 @@ const dfsSubmit = arr => {
         filterType,
         deType,
         term,
+        timeType,
         value,
         name,
         timeValue
@@ -234,6 +238,7 @@ const dfsSubmit = arr => {
           filterTypeTime,
           dynamicTimeSetting,
           term,
+          timeType,
           value,
           type: 'item',
           subTree: null
@@ -279,7 +284,7 @@ const calculateDepth = obj => {
   let path = ''
   const { x: depth, y } = obj
   obj.child.forEach((item, index) => {
-    const { y: sibingLg, z } = item
+    const { y: siblingLg, z } = item
     if (item.child?.length) {
       let parent = (dfs(obj.child, 0) * 41.4) / 2 + (getY(obj.child) || 0) * 41.4
       let children = (dfs(item.child, 0) * 41.4) / 2 + getY(item.child) * 41.4
@@ -291,7 +296,7 @@ const calculateDepth = obj => {
       } else {
         ;[path1, path2] = [children, parent]
       }
-      if (y >= sibingLg) {
+      if (y >= siblingLg) {
         path1 = parent
         path2 = children
       }
@@ -301,22 +306,22 @@ const calculateDepth = obj => {
       path += calculateDepth(item)
     }
     if (!item.child?.length) {
-      if (sibingLg >= y) {
+      if (siblingLg >= y) {
         path += `M${24 + depth * 68} ${y * 40} L${24 + depth * 68} ${
-          (sibingLg + 1) * 41.4 - 20.69921875
-        } L${68 + depth * 68} ${(sibingLg + 1) * 41.4 - 20.69921875}`
+          (siblingLg + 1) * 41.4 - 20.69921875
+        } L${68 + depth * 68} ${(siblingLg + 1) * 41.4 - 20.69921875}`
       } else {
         path += `M${24 + depth * 68} ${
-          (sibingLg +
+          (siblingLg +
             (lg === 1 && index === 0 ? 0 : 1) +
-            (obj.child[index + 1]?.child?.length ? y - sibingLg - 1 : 0)) *
+            (obj.child[index + 1]?.child?.length ? y - siblingLg - 1 : 0)) *
             41.4 +
           20 +
           (lg === 1 && index === 0 ? 26 : 0)
         } L${24 + depth * 68} ${
-          (sibingLg + 1) * 41.4 - 20.69921875 - (lg === 1 && index === 0 ? (z || 0) * 1.4 : 0)
+          (siblingLg + 1) * 41.4 - 20.69921875 - (lg === 1 && index === 0 ? (z || 0) * 1.4 : 0)
         } L${68 + depth * 68} ${
-          (sibingLg + 1) * 41.4 - 20.69921875 - (lg === 1 && index === 0 ? (z || 0) * 1.4 : 0)
+          (siblingLg + 1) * 41.4 - 20.69921875 - (lg === 1 && index === 0 ? (z || 0) * 1.4 : 0)
         }`
       }
     }
@@ -375,6 +380,7 @@ const addCondReal = (type, logic) => {
           value: '',
           enumValue: '',
           term: '',
+          timeType: 'year',
           filterType: 'logic',
           name: '',
           timeValue: '',

@@ -6,19 +6,23 @@ import type { Bar, BarOptions } from '@antv/g2plot/esm/plots/bar'
 import {
   configAxisLabelLengthLimit,
   configPlotTooltipEvent,
+  configRoundAngle,
   getPadding,
+  getLabel,
   getTooltipContainer,
   setGradientColor,
   TOOLTIP_TPL
 } from '@/views/chart/components/js/panel/common/common_antv'
-import { cloneDeep } from 'lodash-es'
+import { cloneDeep, defaults, each, groupBy } from 'lodash-es'
 import {
+  convertToAlphaColor,
   flow,
   hexColorToRGBA,
+  isAlphaColor,
   parseJson,
   setUpStackSeriesColor
 } from '@/views/chart/components/js/util'
-import { valueFormatter } from '@/views/chart/components/js/formatter'
+import { formatterItem, valueFormatter } from '@/views/chart/components/js/formatter'
 import {
   BAR_AXIS_TYPE,
   BAR_EDITOR_PROPERTY,
@@ -26,8 +30,13 @@ import {
 } from '@/views/chart/components/js/panel/charts/bar/common'
 import type { Datum } from '@antv/g2plot/esm/types/common'
 import { useI18n } from '@/hooks/web/useI18n'
-import { DEFAULT_BASIC_STYLE, DEFAULT_LABEL } from '@/views/chart/components/editor/util/chart'
+import {
+  DEFAULT_BASIC_STYLE,
+  DEFAULT_LABEL,
+  DEFAULT_LEGEND_STYLE
+} from '@/views/chart/components/editor/util/chart'
 import { Group } from '@antv/g-canvas'
+import { getItemsOfView } from '@antv/g2/lib/interaction/action/active-region'
 
 const { t } = useI18n()
 const DEFAULT_DATA = []
@@ -101,6 +110,47 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
     const newChart = new Bar(container, options)
 
     newChart.on('interval:click', action)
+    if (options.label) {
+      newChart.on('label:click', e => {
+        action({
+          x: e.x,
+          y: e.y,
+          data: {
+            data: e.target.attrs.data
+          }
+        })
+      })
+    }
+    // 只处理条形图，分组和堆叠的阴影部分没有子维度信息
+    if (this.name === 'bar-horizontal' && options.tooltip) {
+      newChart.on('plot:click', e => {
+        if (e.target?.cfg?.renderer !== 'canvas') {
+          return
+        }
+        const activeRegion = e.view.backgroundGroup.cfg.children.find(
+          i => i.cfg.name === 'active-region'
+        )
+        if (activeRegion?.cfg.visible) {
+          const items = getItemsOfView(
+            e.view,
+            { x: e.x, y: e.y },
+            e.view.getController('tooltip').getTooltipCfg()
+          )
+          if (items?.length) {
+            const datum = items[0].data
+            if (datum && datum.field) {
+              action({
+                x: e.x,
+                y: e.y,
+                data: {
+                  data: datum
+                }
+              })
+            }
+          }
+        }
+      })
+    }
     configPlotTooltipEvent(chart, newChart)
     configAxisLabelLengthLimit(chart, newChart)
     return newChart
@@ -160,19 +210,9 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
         color
       }
     }
-    if (basicStyle.radiusColumnBar === 'roundAngle') {
-      const barStyle = {
-        radius: [
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius
-        ]
-      }
-      options = {
-        ...options,
-        barStyle
-      }
+    options = {
+      ...options,
+      ...configRoundAngle(chart, 'barStyle')
     }
 
     let barWidthRatio
@@ -237,6 +277,7 @@ export class HorizontalBar extends G2PlotChartView<BarOptions, Bar> {
           attrs: {
             x: 0,
             y: 0,
+            data,
             text: value,
             textAlign: 'start',
             textBaseline: 'top',
@@ -307,24 +348,74 @@ export class HorizontalStackBar extends HorizontalBar {
   }
   propertyInner = {
     ...this['propertyInner'],
-    'label-selector': ['color', 'fontSize', 'hPosition', 'labelFormatter'],
-    'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'tooltipFormatter', 'show']
+    'label-selector': [
+      'color',
+      'fontSize',
+      'hPosition',
+      'labelFormatter',
+      'showTotal',
+      'showStackQuota'
+    ],
+    'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'tooltipFormatter', 'show'],
+    'legend-selector': [...BAR_EDITOR_PROPERTY_INNER['legend-selector'], 'legendSort']
   }
   protected configLabel(chart: Chart, options: BarOptions): BarOptions {
-    const baseOptions = super.configLabel(chart, options)
-    if (!baseOptions.label) {
-      return baseOptions
+    let label = getLabel(chart)
+    if (!label) {
+      return { ...options, label }
     }
+    options = { ...options, label }
     const { label: labelAttr } = parseJson(chart.customAttr)
-    baseOptions.label.style.fill = labelAttr.color
-    const label = {
-      ...baseOptions.label,
-      formatter: function (param: Datum) {
-        return valueFormatter(param.value, labelAttr.labelFormatter)
+    if (labelAttr.showStackQuota || labelAttr.showStackQuota === undefined) {
+      options.label.style.fill = labelAttr.color
+      label = {
+        ...options.label,
+        formatter: function (data: Datum) {
+          const value = valueFormatter(data.value, labelAttr.labelFormatter)
+          const group = new Group({})
+          group.addShape({
+            type: 'text',
+            attrs: {
+              x: 0,
+              y: 0,
+              data,
+              text: value,
+              textAlign: 'start',
+              textBaseline: 'top',
+              fontSize: labelAttr.fontSize,
+              fontFamily: chart.fontFamily,
+              fill: labelAttr.color
+            }
+          })
+          return group
+        }
       }
+    } else {
+      label = false
+    }
+    if (labelAttr.showTotal) {
+      const formatterCfg = labelAttr.labelFormatter ?? formatterItem
+      each(groupBy(options.data, 'field'), (values, key) => {
+        const total = values.reduce((a, b) => a + b.value, 0)
+        const value = valueFormatter(total, formatterCfg)
+        if (!options.annotations) {
+          options.annotations = []
+        }
+        options.annotations.push({
+          type: 'text',
+          position: [key, total],
+          content: `${value}`,
+          style: {
+            textAlign: 'start',
+            fontSize: labelAttr.fontSize,
+            fill: labelAttr.color
+          },
+          offsetX: parseInt(labelAttr.fontSize as unknown as string) / 2
+        })
+      })
     }
     return {
-      ...baseOptions,
+      ...options,
       label
     }
   }
@@ -387,6 +478,113 @@ export class HorizontalStackBar extends HorizontalBar {
     return options
   }
 
+  protected configLegend(chart: Chart, options: BarOptions): BarOptions {
+    const optionTmp = super.configLegend(chart, options)
+    if (!optionTmp.legend) {
+      return optionTmp
+    }
+    const extStack = chart.extStack[0]
+    if (extStack?.customSort?.length > 0) {
+      // 图例自定义排序
+      const sort = extStack.customSort ?? []
+      if (sort?.length) {
+        // 用值域限定排序，有可能出现新数据但是未出现在图表上，所以这边要遍历一下子维度，加到后面，让新数据显示出来
+        const data = optionTmp.data
+        const cats =
+          data?.reduce((p, n) => {
+            const cat = n['category']
+            if (cat && !p.includes(cat)) {
+              p.push(cat)
+            }
+            return p
+          }, []) || []
+        const values = sort.reduce((p, n) => {
+          if (cats.includes(n)) {
+            const index = cats.indexOf(n)
+            if (index !== -1) {
+              cats.splice(index, 1)
+            }
+            p.push(n)
+          }
+          return p
+        }, [])
+        cats.length > 0 && values.push(...cats)
+        optionTmp.meta = {
+          ...optionTmp.meta,
+          category: {
+            type: 'cat',
+            values
+          }
+        }
+      }
+    }
+
+    const customStyle = parseJson(chart.customStyle)
+    let size
+    if (customStyle && customStyle.legend) {
+      size = defaults(JSON.parse(JSON.stringify(customStyle.legend)), DEFAULT_LEGEND_STYLE).size
+    } else {
+      size = DEFAULT_LEGEND_STYLE.size
+    }
+
+    optionTmp.legend.marker.style = style => {
+      return {
+        r: size,
+        fill: style.fill
+      }
+    }
+    const { sort, customSort, icon } = customStyle.legend
+    if (sort && sort !== 'none' && chart.extStack.length) {
+      const customAttr = parseJson(chart.customAttr)
+      const { basicStyle } = customAttr
+      const seriesMap =
+        basicStyle.seriesColor?.reduce((p, n) => {
+          p[n.id] = n
+          return p
+        }, {}) || {}
+      const dupCheck = new Set()
+      const colors = optionTmp.color ?? optionTmp.theme.styleSheet.paletteQualitative10
+      const items = optionTmp.data?.reduce((arr, item) => {
+        if (!dupCheck.has(item.category)) {
+          const fill = seriesMap[item.category]?.color ?? colors[dupCheck.size % colors.length]
+          dupCheck.add(item.category)
+          arr.push({
+            name: item.category,
+            value: item.category,
+            marker: {
+              symbol: icon,
+              style: {
+                r: size,
+                fill: isAlphaColor(fill) ? fill : convertToAlphaColor(fill, basicStyle.alpha)
+              }
+            }
+          })
+        }
+        return arr
+      }, [])
+      if (sort !== 'custom') {
+        items.sort((a, b) => {
+          return sort !== 'desc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+        })
+      } else {
+        const tmp = []
+        ;(customSort || []).forEach(item => {
+          const index = items.findIndex(i => i.name === item)
+          if (index !== -1) {
+            tmp.push(items[index])
+            items.splice(index, 1)
+          }
+        })
+        items.unshift(...tmp)
+      }
+      optionTmp.legend.items = items
+      if (extStack?.customSort?.length > 0) {
+        delete optionTmp.meta?.category.values
+      }
+    }
+    return optionTmp
+  }
+
   protected setupOptions(chart: Chart, options: BarOptions): BarOptions {
     return flow(
       this.configTheme,
@@ -430,23 +628,41 @@ export class HorizontalPercentageStackBar extends HorizontalStackBar {
     'tooltip-selector': ['color', 'fontSize', 'backgroundColor', 'show']
   }
   protected configLabel(chart: Chart, options: BarOptions): BarOptions {
-    const baseOptions = super.configLabel(chart, options)
-    if (!baseOptions.label) {
-      return baseOptions
+    const baseLabel = getLabel(chart)
+    if (!baseLabel) {
+      return { ...options, label: baseLabel }
     }
     const { customAttr } = chart
     const l = parseJson(customAttr).label
     const label = {
-      ...baseOptions.label,
-      formatter: function (param: Datum) {
-        if (!param.value) {
-          return '0%'
+      ...baseLabel,
+      formatter: function (data: Datum) {
+        let value = data.value
+        if (value) {
+          value = (Math.round(value * 10000) / 100).toFixed(l.reserveDecimalCount) + '%'
+        } else {
+          value = '0%'
         }
-        return (Math.round(param.value * 10000) / 100).toFixed(l.reserveDecimalCount) + '%'
+        const group = new Group({})
+        group.addShape({
+          type: 'text',
+          attrs: {
+            x: 0,
+            y: 0,
+            data,
+            text: value,
+            textAlign: 'start',
+            textBaseline: 'top',
+            fontSize: l.fontSize,
+            fontFamily: chart.fontFamily,
+            fill: l.color
+          }
+        })
+        return group
       }
     }
     return {
-      ...baseOptions,
+      ...options,
       label
     }
   }

@@ -16,7 +16,7 @@ const props = withDefaults(
 )
 
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 
 const predefineColors = COLOR_PANEL
@@ -83,7 +83,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <el-form ref="miscForm" :model="state.miscForm">
+  <el-form size="small" ref="miscForm" :model="state.miscForm">
     <el-form-item
       v-if="showProperty('showName')"
       class="form-item form-item-checkbox"

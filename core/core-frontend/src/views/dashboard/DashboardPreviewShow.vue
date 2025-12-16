@@ -9,7 +9,6 @@ import EmptyBackground from '@/components/empty-background/src/EmptyBackground.v
 import ArrowSide from '@/views/common/DeResourceArrow.vue'
 import { initCanvasData, initCanvasDataPrepare, onInitReady } from '@/utils/canvasUtils'
 import { useAppStoreWithOut } from '@/store/modules/app'
-import { usePermissionStoreWithOut } from '@/store/modules/permission'
 import { useMoveLine } from '@/hooks/web/useMoveLine'
 import { Icon } from '@/components/icon-custom'
 import { download2AppTemplate, downloadCanvas2 } from '@/utils/imgUtils'
@@ -20,6 +19,12 @@ import { useEmitt } from '@/hooks/web/useEmitt'
 import { useUserStoreWithOut } from '@/store/modules/user'
 import { useI18n } from '@/hooks/web/useI18n'
 import CanvasOptBar from '@/components/visualization/CanvasOptBar.vue'
+import {
+  exportLogApp,
+  exportLogImg,
+  exportLogPDF,
+  exportLogTemplate
+} from '@/api/visualization/dataVisualization'
 const userStore = useUserStoreWithOut()
 
 const userName = computed(() => userStore.getName)
@@ -29,7 +34,6 @@ const dvMainStore = dvMainStoreWithOut()
 const previewCanvasContainer = ref(null)
 const dashboardPreview = ref(null)
 const slideShow = ref(true)
-const permissionStore = usePermissionStoreWithOut()
 const appStore = useAppStoreWithOut()
 const dataInitState = ref(true)
 const downloadStatus = ref(false)
@@ -60,10 +64,15 @@ const props = defineProps({
     required: false,
     type: Boolean,
     default: false
+  },
+  resourceTable: {
+    required: false,
+    type: String,
+    default: 'core'
   }
 })
 
-const { showPosition } = toRefs(props)
+const { showPosition, resourceTable } = toRefs(props)
 
 const resourceTreeRef = ref()
 
@@ -98,7 +107,7 @@ const loadCanvasData = (dvId, weight?) => {
   dataInitState.value = false
   initMethod(
     dvId,
-    { busiFlag: 'dashboard' },
+    { busiFlag: 'dashboard', resourceTable: 'core' },
     function ({
       canvasDataResult,
       canvasStyleResult,
@@ -133,6 +142,11 @@ const downloadH2 = type => {
     const vueDom = previewCanvasContainer.value.querySelector('.canvas-container')
     downloadCanvas2(type, vueDom, state.dvInfo.name, () => {
       downloadStatus.value = false
+      const param = {
+        id: state.dvInfo.id,
+        type: state.dvInfo.type === 'dashboard' ? 'panel' : 'screen'
+      }
+      type === 'img' ? exportLogImg(param) : exportLogPDF(param)
       mapElementIds.forEach(id => useEmitt().emitter.emit('l7-unprepare-picture', id))
     })
   })
@@ -175,10 +189,21 @@ const checkTemplate = () => {
 
 const fileDownload = (downloadType, attachParams) => {
   downloadStatus.value = true
+  const mapElementIds =
+    state.canvasDataPreview
+      ?.filter(ele => mapChartTypes.includes(ele.innerType))
+      .map(ele => ele.id) || []
+  mapElementIds.forEach(id => useEmitt().emitter.emit('l7-prepare-picture', id))
   nextTick(() => {
     const vueDom = previewCanvasContainer.value.querySelector('.canvas-container')
     download2AppTemplate(downloadType, vueDom, state.dvInfo.name, attachParams, () => {
       downloadStatus.value = false
+      const param = {
+        id: state.dvInfo.id,
+        type: state.dvInfo.type === 'dashboard' ? 'panel' : 'screen'
+      }
+      downloadType === 'app' ? exportLogApp(param) : exportLogTemplate(param)
+      mapElementIds.forEach(id => useEmitt().emitter.emit('l7-unprepare-picture', id))
     })
   })
 }
@@ -263,12 +288,13 @@ defineExpose({
         v-show="slideShow"
         :cur-canvas-type="'dashboard'"
         :show-position="showPosition"
+        :resource-table="resourceTable"
         @node-click="resourceNodeClick"
       />
     </el-aside>
     <el-container
       class="preview-area"
-      :class="{ 'no-data': !hasTreeData }"
+      :class="{ 'no-data': !state.dvInfo?.id }"
       v-loading="!dataInitState"
     >
       <div

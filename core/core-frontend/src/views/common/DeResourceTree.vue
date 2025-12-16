@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import dvDashboardSpineMobile from '@/assets/svg/dv-dashboard-spine-mobile.svg'
+import dvDashboardSpineMobileDisabled from '@/assets/svg/dv-dashboard-spine-mobile-disabled.svg'
 import icon_add_outlined from '@/assets/svg/icon_add_outlined.svg'
 import dvCopyDark from '@/assets/svg/dv-copy-dark.svg'
 import dvDelete from '@/assets/svg/dv-delete.svg'
 import dvMove from '@/assets/svg/dv-move.svg'
 import dvCancelPublish from '@/assets/svg/icon_undo_outlined.svg'
 import { treeDraggbleChart } from '@/utils/treeDraggbleChart'
-import { debounce } from 'lodash-es'
+import { throttle } from 'lodash-es'
 import dvRename from '@/assets/svg/dv-rename.svg'
 import dvDashboardSpine from '@/assets/svg/dv-dashboard-spine.svg'
 import dvDashboardSpineDisabled from '@/assets/svg/dv-dashboard-spine-disabled.svg'
@@ -47,7 +48,7 @@ import { useI18n } from '@/hooks/web/useI18n'
 import _ from 'lodash'
 import DeResourceCreateOptV2 from '@/views/common/DeResourceCreateOptV2.vue'
 import { useCache } from '@/hooks/web/useCache'
-import { findParentIdByChildIdRecursive } from '@/utils/canvasUtils'
+import { findParentIdByChildIdRecursive, onInitReady } from '@/utils/canvasUtils'
 import { XpackComponent } from '@/components/plugin'
 import treeSort, { treeParentWeight } from '@/utils/treeSortUtils'
 import router from '@/router'
@@ -70,6 +71,11 @@ const props = defineProps({
     required: false,
     type: String,
     default: 'preview'
+  },
+  resourceTable: {
+    required: false,
+    type: String,
+    default: 'core'
   }
 })
 const defaultProps = {
@@ -248,6 +254,9 @@ const nodeCollapse = data => {
 }
 
 const filterNode = (value: string, data: BusiTreeNode) => {
+  if (showPosition.value === 'multiplexing' && data.id === dvInfo.value?.id) {
+    return false
+  }
   if (!value) return true
   return data.name?.toLocaleLowerCase().includes(value.toLocaleLowerCase())
 }
@@ -260,6 +269,10 @@ const cancelPreRequest = () => {
 }
 
 const nodeClick = (data: BusiTreeNode, node) => {
+  dvMainStore.setCurComponent({ component: null, index: null })
+  if (showPosition.value !== 'multiplexing') {
+    dvMainStore.setEditMode('preview')
+  }
   if (node.disabled) {
     nextTick(() => {
       // 找到当前高亮的节点，移除高亮样式
@@ -273,6 +286,29 @@ const nodeClick = (data: BusiTreeNode, node) => {
     cancelPreRequest()
     selectedNodeKey.value = data.id
     if (data.leaf) {
+      if (!embeddedStore.baseUrl) {
+        let url = window.location.href
+        const paramName = 'dvId'
+        const paramValue = data.id
+        // 检查是否已经有查询参数（在哈希部分）
+        if (url.includes('?')) {
+          const regex = new RegExp(`([?&])${paramName}=[^&]*`)
+          if (regex.test(url)) {
+            url = url.replace(regex, `$1${paramName}=${paramValue}`)
+          } else {
+            url += `&${paramName}=${paramValue}`
+          }
+        } else {
+          url += `?${paramName}=${paramValue}`
+        }
+        window.history.replaceState(
+          {
+            path: url
+          },
+          '',
+          url
+        )
+      }
       emit('nodeClick', data)
     } else {
       resourceListTree.value.setCurrentKey(null)
@@ -280,8 +316,11 @@ const nodeClick = (data: BusiTreeNode, node) => {
   }
 }
 
-const getTree = async () => {
-  const request = { busiFlag: curCanvasType.value } as BusiTreeRequest
+const getTree = async (notOpen = false) => {
+  const request = {
+    busiFlag: curCanvasType.value,
+    resourceTable: props.resourceTable
+  } as BusiTreeRequest
   const isDashboard = curCanvasType.value == 'dashboard'
   await interactiveStore.setInteractive(request)
   const interactiveData = isDashboard ? interactiveStore.getPanel : interactiveStore.getScreen
@@ -301,12 +340,12 @@ const getTree = async () => {
   if (nodeData.length && nodeData[0]['id'] === '0' && nodeData[0]['name'] === 'root') {
     state.originResourceTree = nodeData[0]['children'] || []
     sortTypeChange(curSortType)
-    afterTreeInit()
+    afterTreeInit(notOpen)
     return
   }
   state.originResourceTree = nodeData
   sortTypeChange(curSortType)
-  afterTreeInit()
+  afterTreeInit(notOpen)
 }
 
 const flattedTree = computed<BusiTreeNode[]>(() => {
@@ -325,16 +364,21 @@ function flatTree(tree: BusiTreeNode[]) {
   return result
 }
 
-const afterTreeInit = () => {
+const afterTreeInit = (notOpen = false) => {
   state.pWeightMap = treeParentWeight(state.originResourceTree, rootManage.value ? 9 : 0)
   mounted.value = true
   if (selectedNodeKey.value && returnMounted.value) {
     expandedArray.value = getDefaultExpandedKeys()
     returnMounted.value = false
   }
+  onInitReady({ type: curCanvasType.value }, 'resource_tree_init_ready')
   nextTick(() => {
     resourceListTree.value.setCurrentKey(selectedNodeKey.value)
     resourceListTree.value.filter(filterText.value)
+    if (notOpen) return
+    nextTick(() => {
+      document.querySelector('.is-current')?.firstChild?.click()
+    })
   })
 }
 
@@ -355,7 +399,7 @@ const operation = (cmd: string, data: BusiTreeNode, nodeType: string) => {
     }).then(() => {
       deleteLogic(data.id, curCanvasType.value).then(() => {
         ElMessage.success(t('visualization.delete_success'))
-        getTree()
+        getTree(true)
       })
     })
   } else if (cmd === 'cancelPublish') {
@@ -486,7 +530,7 @@ const resourceEdit = resourceId => {
 }
 
 const resourceOptFinish = () => {
-  getTree()
+  getTree(true)
 }
 
 const resourceCreateFinish = templateData => {
@@ -579,7 +623,7 @@ const sortTypeChange = sortType => {
   state.curSortType = sortType
 }
 
-const proxyAllowDrop = debounce((arg1, arg2) => {
+const proxyAllowDrop = throttle((arg1, arg2) => {
   const flagArray = ['dashboard', 'dataV', 'dataset', 'datasource']
   const flag = flagArray.findIndex(item => item === curCanvasType.value)
   if (flag < 0 || !isFreeFolder(arg2, flag + 1)) {
@@ -752,7 +796,7 @@ defineExpose({
               ></Icon>
               <Icon v-if="!data.extraFlag1"
                 ><component
-                  :is="data.extraFlag ? dvDashboardSpineDisabled : dvDashboardSpineDisabled"
+                  :is="data.extraFlag ? dvDashboardSpineMobileDisabled : dvDashboardSpineDisabled"
                 ></component
               ></Icon>
             </el-icon>
@@ -959,7 +1003,7 @@ defineExpose({
 
 <style lang="less">
 .menu-outer-dv_popper {
-  width: 140px;
+  min-width: 140px;
   margin-top: -2px !important;
 
   .ed-icon {

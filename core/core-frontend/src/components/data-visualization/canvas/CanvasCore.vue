@@ -57,7 +57,6 @@ const contextmenuStore = contextmenuStoreWithOut()
 const { curComponent, dvInfo, editMode, tabMoveOutComponentId, canvasState, mainScrollTop } =
   storeToRefs(dvMainStore)
 const { editorMap, areaData, isCtrlOrCmdDown } = storeToRefs(composeStore)
-const emits = defineEmits(['scrollCanvasAdjust'])
 const props = defineProps({
   themes: {
     type: String,
@@ -252,7 +251,7 @@ watch(
 )
 
 watch(
-  () => canvasStyleData.value,
+  [() => componentData.value.length, () => canvasStyleData.value],
   () => {
     nextTick(() => {
       initWatermark()
@@ -263,7 +262,7 @@ watch(
 
 watch(
   () => areaData.value.components.length,
-  (val, oldVal) => {
+  () => {
     groupAreaClickChange()
   }
 )
@@ -547,8 +546,20 @@ const handleContextMenu = event => {
   const offsetY = rect.top
 
   // 计算鼠标相对于最外层 div 的坐标
-  const left = mouseX - offsetX
+  let left = mouseX - offsetX
   let top = mouseY - offsetY
+
+  const curDomId = event.currentTarget?.id
+  if (curDomId) {
+    const curDomSplitParams = curDomId.split('-')
+    if (curDomSplitParams.length > 1 && curDomSplitParams[1] !== 'canvas') {
+      const tabDom = document.getElementById(`shape-id-${curDomSplitParams[1]}`)
+      if (tabDom) {
+        left = left + tabDom.offsetLeft
+        top = top + tabDom.offsetTop
+      }
+    }
+  }
   // 组件处于编辑状态的时候 如富文本 不弹出右键菜单
   if (!curComponent.value || (curComponent.value && !curComponent.value.editing)) {
     if (
@@ -921,9 +932,11 @@ function removeItemComponent(item) {
       })
     }
     if (!!checkedFields.length) {
-      Array.from(new Set(checkedFields)).forEach(ele => {
-        emitter.emit(`query-data-${ele}`)
-      })
+      setTimeout(() => {
+        Array.from(new Set(checkedFields)).forEach(ele => {
+          emitter.emit(`query-data-${ele}`)
+        })
+      }, 300)
     }
     snapshotStore.recordSnapshotCache('removeItem')
   }
@@ -936,7 +949,7 @@ function removeItem(index) {
     dvMainStore.removeLinkageInfo(item['id'])
     if (isMainCanvas(canvasId.value)) {
       // 主画布中存在隐藏组件 直接从原始componentData中进行删除
-      dvMainStore.deleteComponentById(item.id)
+      dvMainStore.deleteComponentById(item.id, undefined, false)
     } else {
       componentData.value.splice(index, 1)
     }
@@ -1703,6 +1716,7 @@ defineExpose({
         class="component"
         :is-edit="true"
         :style="getComponentStyle(item.style)"
+        :curStyle="getShapeItemShowStyle(item)"
         :prop-value="item.propValue"
         :element="item"
         :request="item.request"

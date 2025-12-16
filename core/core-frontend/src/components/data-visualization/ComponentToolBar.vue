@@ -53,8 +53,6 @@ const reposition = () => {
 }
 
 // 记录瞬时wheel值 防止放大操作和滚动操作冲突
-let lastWheelNum = 0
-
 // 检查当前页面是否有弹框
 const checkDialog = () => {
   let haveDialog = false
@@ -145,7 +143,7 @@ onUnmounted(() => {
         v-model="scale"
         :min="10"
         :max="200"
-        tooltip-theme="ndark"
+        tooltip-theme="light"
         @change="handleScaleChange()"
         size="small"
       />
@@ -153,7 +151,7 @@ onUnmounted(() => {
         <Icon name="dv-max"><dvMax class="svg-icon"></dvMax></Icon
       ></el-icon>
       <el-divider direction="vertical" class="custom-divider_scale" />
-      <el-tooltip effect="ndark" :content="t('visualization.locate_tips')" placement="top">
+      <el-tooltip effect="light" :content="t('visualization.locate_tips')" placement="top">
         <el-icon @click="reposition" class="hover-icon-custom" style="margin-right: 12px">
           <Icon name="dv-reposition"><dvReposition class="svg-icon"></dvReposition></Icon
         ></el-icon>
@@ -176,6 +174,10 @@ onUnmounted(() => {
   .scale-area {
     display: flex;
     align-items: center;
+
+    :deep(.ed-input-number__decrease) {
+      --ed-input-number-controls-height: 12px;
+    }
   }
 }
 :deep(.ed-input--dark .ed-input__wrapper),
@@ -197,12 +199,15 @@ onUnmounted(() => {
 
   :deep(.ed-input__wrapper) {
     position: relative;
-    padding: 0 38px 0 8px;
+    padding-left: 8px !important;
+    padding-right: 38px !important;
     &::after {
       position: absolute;
       content: '%';
       right: 35px;
       top: 1px;
+      height: 24px;
+      line-height: 24px;
     }
   }
 }

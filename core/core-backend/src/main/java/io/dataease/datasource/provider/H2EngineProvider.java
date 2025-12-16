@@ -46,12 +46,7 @@ public class H2EngineProvider extends EngineProvider {
                 if (tableFields.get(i).isChecked()) {
                     if (StringUtils.isEmpty(strings[i])) {
                         String type = tableFields.get(i).getType() == null ? tableFields.get(i).getFieldType() : tableFields.get(i).getType();
-                        if (type.equals("LONG") || type.equals("DOUBLE")) {
-                            strings1[length] = "0";
-                        } else {
-                            strings1[length] = null;
-                        }
-
+                        strings1[length] = null;
                     } else {
                         strings1[length] = strings[i].replace("\\", "\\\\").replace("'", "''");
                     }
@@ -61,7 +56,7 @@ public class H2EngineProvider extends EngineProvider {
             values.append("('").append(String.join("','", Arrays.asList(strings1)))
                     .append("'),");
         }
-        return (insertSql + values.substring(0, values.length() - 1));
+        return (insertSql + values.substring(0, values.length() - 1)).replaceAll("'null'", "null");
     }
 
 

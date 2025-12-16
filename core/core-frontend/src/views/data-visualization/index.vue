@@ -303,24 +303,28 @@ const doUseCache = flag => {
 const initLocalCanvasData = async callback => {
   const { opt, sourcePid, resourceId } = state
   const busiFlag = opt === 'copy' ? 'dataV-copy' : 'dataV'
-  await initCanvasData(resourceId, { busiFlag, resourceTable: 'snapshot' }, function () {
-    state.canvasInitStatus = true
-    // afterInit
-    nextTick(() => {
-      dvMainStore.setDataPrepareState(true)
-      snapshotStore.recordSnapshotCache('renderChart')
-      if (dvInfo.value && opt === 'copy') {
-        dvInfo.value.dataState = 'prepare'
-        dvInfo.value.optType = 'copy'
-        dvInfo.value.pid = sourcePid
-        setTimeout(() => {
-          snapshotStore.recordSnapshotCache('renderChart')
-        }, 1500)
-      }
-      onInitReady({ resourceId: resourceId })
-      callback && callback()
-    })
-  })
+  await initCanvasData(
+    resourceId,
+    { busiFlag, resourceTable: 'snapshot', source: 'main-edit' },
+    function () {
+      state.canvasInitStatus = true
+      // afterInit
+      nextTick(() => {
+        dvMainStore.setDataPrepareState(true)
+        snapshotStore.recordSnapshotCache('renderChart')
+        if (dvInfo.value && opt === 'copy') {
+          dvInfo.value.dataState = 'prepare'
+          dvInfo.value.optType = 'copy'
+          dvInfo.value.pid = sourcePid
+          setTimeout(() => {
+            snapshotStore.recordSnapshotCache('renderChart')
+          }, 1500)
+        }
+        onInitReady({ resourceId: resourceId })
+        callback && callback()
+      })
+    }
+  )
 }
 
 const previewScaleChange = () => {
@@ -349,7 +353,7 @@ const checkPer = async resourceId => {
   if (!window.DataEaseBi || !resourceId) {
     return true
   }
-  const request = { busiFlag: 'dataV' }
+  const request = { busiFlag: 'dataV', resourceTable: 'core' }
   await interactiveStore.setInteractive(request)
   return check(wsCache.get('screen-weight'), resourceId, 4)
 }
@@ -373,6 +377,7 @@ const newWindowFromDiv = ref(false)
 let p = null
 const XpackLoaded = () => p(true)
 onMounted(async () => {
+  document.body.style.overflow = 'hidden'
   dvMainStore.setCurComponent({ component: null, index: null })
   snapshotStore.initSnapShot()
   if (window.location.hash.includes('#/dvCanvas')) {
@@ -391,7 +396,8 @@ onMounted(async () => {
     embeddedStore.templateParams || router.currentRoute.value.query.templateParams
   createType = embeddedStore.createType || router.currentRoute.value.query.createType
   const opt = embeddedStore.opt || router.currentRoute.value.query.opt
-  const checkResult = await checkPer(dvId)
+  const checkDvId = opt && opt === 'copy' ? null : dvId
+  const checkResult = await checkPer(checkDvId)
   if (!checkResult) {
     return
   }
@@ -462,6 +468,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  document.body.style.overflow = ''
   window.removeEventListener('storage', eventCheck)
   window.removeEventListener('blur', releaseAttachKey)
   eventBus.off('handleNew', handleNew)
@@ -506,8 +513,12 @@ const popComponentData = computed(() =>
 
 const doRecoverToPublished = () => {
   recoverToPublished({ id: dvInfo.value.id, type: 'dataV', name: dvInfo.value.name }).then(() => {
+    state.resourceId = dvInfo.value.id
+    state.sourcePid = dvInfo.value.pid
+    state.opt = null
     initLocalCanvasData(() => {
       dvMainStore.updateDvInfoCall(1)
+      useEmitt().emitter.emit('calcData-all')
     })
   })
 }
@@ -670,6 +681,7 @@ eventBus.on('tabSort', tabSort)
     v-if="fullscreenFlag"
     style="z-index: 10"
     ref="dvPreviewRef"
+    show-position="edit-preview"
     :canvas-data-preview="componentData"
     :canvas-style-preview="canvasStyleData"
     :canvas-view-info-preview="canvasViewInfo"

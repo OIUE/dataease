@@ -15,6 +15,7 @@ import { useEmitt } from '@/hooks/web/useEmitt'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
 import BackgroundOverallCommon from '@/components/visualization/component-background/BackgroundOverallCommon.vue'
+import { isDashboard, isMainCanvas } from '@/utils/canvasUtils'
 const { t } = useI18n()
 const styleActiveNames = ref(['basicStyle'])
 const dvMainStore = dvMainStoreWithOut()
@@ -40,7 +41,7 @@ const props = defineProps({
 })
 const { chart, commonBackgroundPop, element } = toRefs(props)
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 const predefineColors = COLOR_PANEL
 const fontSizeList = []
@@ -117,7 +118,7 @@ const currentSearch = ref({
   queryConditionWidth: 227
 })
 
-const onFreezeChange = newVal => {
+const onFreezeChange = () => {
   if (element.value.freeze) {
     let historyFreezeCount = 0
     dvMainStore.componentData.forEach(item => {
@@ -199,7 +200,7 @@ onMounted(() => {
 const reUpload = e => {
   const file = e.target.files[0]
   if (file.size > 15000000) {
-    ElMessage.success('图片大小不能超过15M')
+    ElMessage.error('图片大小不能超过15M')
     return
   }
   uploadFileResult(file, fileUrl => {
@@ -235,6 +236,12 @@ const checkItalic = type => {
   chart.value.customStyle.component[type] = chart.value.customStyle.component[type] ? '' : 'italic'
 }
 const initParams = () => {
+  if (!chart.value.customStyle.component.hasOwnProperty('queryConditionHeight')) {
+    chart.value.customStyle.component = {
+      ...chart.value.customStyle.component,
+      queryConditionHeight: 32
+    }
+  }
   if (!chart.value.customStyle.component.hasOwnProperty('labelShow')) {
     chart.value.customStyle.component = {
       ...chart.value.customStyle.component,
@@ -272,6 +279,16 @@ const onTitleChange = () => {
   element.value.name = chart.value.customStyle.component.title
   chart.value.title = chart.value.customStyle.component.title
 }
+
+const onPlaceholderChange = () => {
+  props.element.propValue.forEach(ele => {
+    if (ele.id === currentPlaceholder.value) {
+      ele.placeholder = currentSearch.value.placeholder
+      ele.queryConditionWidth = currentSearch.value.queryConditionWidth
+    }
+  })
+  snapshotStore.recordSnapshotCacheToMobile('propValue')
+}
 </script>
 
 <template>
@@ -292,7 +309,7 @@ const onTitleChange = () => {
     <el-row class="de-collapse-style">
       <el-collapse v-model="styleActiveNames" class="style-collapse">
         <el-collapse-item :effect="themes" name="basicStyle" :title="t('chart.basic_style')">
-          <el-form @keydown.stop.prevent.enter label-position="top">
+          <el-form size="small" @keydown.stop.prevent.enter label-position="top">
             <el-form-item class="form-item margin-bottom-8" :class="'form-item-' + themes">
               <el-checkbox
                 :effect="themes"
@@ -331,6 +348,7 @@ const onTitleChange = () => {
               />
             </el-form-item>
             <el-form-item
+              v-if="!mobileInPc && isDashboard() && isMainCanvas(element.canvasId)"
               class="form-item margin-bottom-8"
               :class="'form-item-' + themes"
               :label="t('visualization.query_position')"
@@ -358,7 +376,12 @@ const onTitleChange = () => {
           </el-form>
         </el-collapse-item>
         <el-collapse-item :effect="themes" name="addition" :title="t('v_query.query_condition')">
-          <el-form @keydown.stop.prevent.enter label-position="top" style="padding-bottom: 8px">
+          <el-form
+            size="small"
+            @keydown.stop.prevent.enter
+            label-position="top"
+            style="padding-bottom: 8px"
+          >
             <el-row :gutter="8">
               <el-col :span="12">
                 <el-form-item
@@ -406,6 +429,19 @@ const onTitleChange = () => {
                 controls-position="right"
               />
             </el-form-item>
+            <el-form-item
+              :effect="themes"
+              class="form-item"
+              :label="t('visualization.query_condition_height')"
+              :class="'form-item-' + themes"
+            >
+              <el-input-number
+                v-model="chart.customStyle.component.queryConditionHeight"
+                :min="32"
+                :effect="themes"
+                controls-position="right"
+              />
+            </el-form-item>
             <el-form-item class="form-item margin-bottom-8" :class="'form-item-' + themes">
               <el-checkbox
                 :effect="themes"
@@ -426,6 +462,7 @@ const onTitleChange = () => {
                 <el-color-picker
                   :effect="themes"
                   :trigger-width="56"
+                  style="max-width: 56px; min-width: 56px"
                   is-custom
                   show-alpha
                   v-model="chart.customStyle.component.text"
@@ -437,7 +474,7 @@ const onTitleChange = () => {
                   v-model="chart.customStyle.component.placeholderSize"
                   @change="handleCurrentPlaceholderCustomChange"
                   :min="10"
-                  :max="20"
+                  :max="40"
                   :disabled="!chart.customStyle.component.placeholderShow"
                   style="margin-left: 8px"
                   step-strictly
@@ -470,7 +507,7 @@ const onTitleChange = () => {
             >
               <el-input
                 :effect="themes"
-                @change="handleCurrentPlaceholderChange"
+                @change="onPlaceholderChange"
                 :disabled="!chart.customStyle.component.placeholderShow || !currentPlaceholder"
                 v-model.lazy="currentSearch.placeholder"
               />
@@ -485,7 +522,7 @@ const onTitleChange = () => {
                 :effect="themes"
                 :min="100"
                 controls-position="right"
-                @change="handleCurrentPlaceholderChange"
+                @change="onPlaceholderChange"
                 :disabled="!chart.customStyle.component.placeholderShow || !currentPlaceholder"
                 v-model.lazy="currentSearch.queryConditionWidth"
               />
@@ -502,6 +539,7 @@ const onTitleChange = () => {
             :class="!chart.customStyle.component.labelShow && 'is-disabled'"
             :disabled="!chart.customStyle.component.labelShow"
             label-position="top"
+            size="small"
             style="padding-bottom: 8px"
           >
             <el-form-item
@@ -528,6 +566,7 @@ const onTitleChange = () => {
                 :effect="themes"
                 is-custom
                 show-alpha
+                style="width: 50px"
                 v-model="chart.customStyle.component.labelColor"
                 :predefine="predefineColors"
               /><el-tooltip
@@ -606,7 +645,12 @@ const onTitleChange = () => {
           </el-form>
         </collapse-switch-item>
         <el-collapse-item :effect="themes" name="button" :title="t('commons.button')">
-          <el-form @keydown.stop.prevent.enter label-position="top" style="padding-bottom: 8px">
+          <el-form
+            size="small"
+            @keydown.stop.prevent.enter
+            label-position="top"
+            style="padding-bottom: 8px"
+          >
             <el-form-item
               :effect="themes"
               class="form-item"
@@ -897,7 +941,7 @@ const onTitleChange = () => {
       color: var(--ed-color-primary);
       background-color: var(--ed-color-primary-1a, rgba(51, 112, 255, 0.1));
       &:hover {
-        background-color: #3370ff33;
+        background-color: var(--ed-color-primary-33, #3370ff33);
       }
     }
   }

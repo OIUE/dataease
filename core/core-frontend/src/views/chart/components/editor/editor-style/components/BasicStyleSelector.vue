@@ -24,6 +24,7 @@ import {
   qqMapStyleOptions,
   tdtMapStyleOptions
 } from '@/views/chart/components/js/panel/charts/map/common'
+import { useEmitt } from '@/hooks/web/useEmitt'
 
 const dvMainStore = dvMainStoreWithOut()
 const localeStore = useLocaleStoreWithOut()
@@ -66,8 +67,8 @@ const state = reactive({
   fileList: []
 })
 const emit = defineEmits(['onBasicStyleChange', 'onMiscChange'])
-const changeBasicStyle = (prop?: string, requestData = false) => {
-  emit('onBasicStyleChange', { data: state.basicStyleForm, requestData }, prop)
+const changeBasicStyle = (prop?: string, requestData = false, render = true) => {
+  emit('onBasicStyleChange', { data: state.basicStyleForm, requestData, render }, prop)
 }
 const onAlphaChange = v => {
   const _v = parseInt(v)
@@ -138,6 +139,14 @@ const init = () => {
         name = t('chart.level_label', { num: numberToChineseUnderHundred(i) })
       }
       tableExpandLevelOptions.push({ name, value: i })
+    }
+  }
+  const lastPageInfo = dvMainStore.getViewPageInfo(props.chart.id)
+  if (lastPageInfo) {
+    if (lastPageInfo.pageSize && lastPageInfo.pageSize !== state.basicStyleForm.tablePageSize) {
+      state.basicStyleForm.tablePageSize = lastPageInfo.pageSize
+      changeBasicStyle('tablePageSize', false, false)
+      return
     }
   }
   initTableColumnWidth()
@@ -260,6 +269,8 @@ const changeFieldColumnWidth = () => {
 const pageSizeOptions = [
   { name: '10' + t('chart.table_page_size_unit'), value: 10 },
   { name: '20' + t('chart.table_page_size_unit'), value: 20 },
+  { name: '30' + t('chart.table_page_size_unit'), value: 30 },
+  { name: '40' + t('chart.table_page_size_unit'), value: 40 },
   { name: '50' + t('chart.table_page_size_unit'), value: 50 },
   { name: '100' + t('chart.table_page_size_unit'), value: 100 }
 ]
@@ -316,6 +327,31 @@ const mergeCell = computed(() => {
   }
   return false
 })
+
+const preventInvalidKeydown = event => {
+  const invalidKeys = ['e', 'E', '+', '-', '.']
+  if (invalidKeys.includes(event.key)) {
+    event.preventDefault()
+  }
+}
+// 验证输入值
+const validateInput = (value, field) => {
+  if (value === '') {
+    state.basicStyleForm[field] = 1
+    return
+  }
+
+  let num = parseInt(value, 10)
+
+  if (isNaN(num)) {
+    num = 1
+  } else if (num < 1) {
+    num = 1
+  } else if (num > 100) {
+    num = 100
+  }
+  state.basicStyleForm[field] = num
+}
 onMounted(() => {
   init()
   getMapKey().then(res => {
@@ -323,10 +359,19 @@ onMounted(() => {
       mapType.value = res.mapType
     }
   })
+  useEmitt({
+    name: 'chart-type-change',
+    callback: () => {
+      if (['topRoundAngle', 'roundAngle'].includes(state.basicStyleForm.radiusColumnBar)) {
+        state.basicStyleForm.radiusColumnBar = 'roundAngle'
+        changeBasicStyle('radiusColumnBar')
+      }
+    }
+  })
 })
 </script>
 <template>
-  <div style="width: 100%">
+  <el-form size="small" style="width: 100%">
     <template v-if="showProperty('colors')">
       <custom-color-style-select
         v-model="state"
@@ -383,7 +428,34 @@ onMounted(() => {
         />
       </el-select>
     </el-form-item>
-
+    <el-form-item
+      class="form-item"
+      v-if="showProperty('quotaPosition')"
+      :label="t('chart.quota_position')"
+      :class="'form-item-' + themes"
+    >
+      <el-radio-group
+        size="small"
+        :effect="themes"
+        v-model="state.basicStyleForm.quotaPosition"
+        @change="changeBasicStyle('quotaPosition')"
+      >
+        <el-radio label="col" :effect="themes">{{ t('chart.quota_position_col') }}</el-radio>
+        <el-radio label="row" :effect="themes">{{ t('chart.quota_position_row') }}</el-radio>
+      </el-radio-group>
+    </el-form-item>
+    <el-form-item
+      v-if="showProperty('quotaColLabel') && state.basicStyleForm.quotaPosition === 'row'"
+      class="form-item"
+      :label="t('chart.quota_col_label')"
+      :class="'form-item-' + themes"
+    >
+      <el-input
+        :effect="themes"
+        v-model="state.basicStyleForm.quotaColLabel"
+        @change="changeBasicStyle('quotaColLabel')"
+      />
+    </el-form-item>
     <div class="alpha-setting" v-if="showProperty('alpha')">
       <label class="alpha-label" :class="{ dark: 'dark' === themes }">
         {{ t('chart.not_alpha') }}
@@ -428,9 +500,16 @@ onMounted(() => {
         :effect="themes"
         v-model="state.basicStyleForm.radiusColumnBar"
         @change="changeBasicStyle('radiusColumnBar')"
+        class="radius-class"
       >
         <el-radio label="rightAngle" :effect="themes">{{ t('chart.rightAngle') }}</el-radio>
         <el-radio label="roundAngle" :effect="themes">{{ t('chart.roundAngle') }}</el-radio>
+        <el-radio
+          v-if="!props.chart.type.includes('-stack')"
+          label="topRoundAngle"
+          :effect="themes"
+          >{{ t('chart.topRoundAngle') }}</el-radio
+        >
       </el-radio-group>
     </el-form-item>
 
@@ -801,7 +880,7 @@ onMounted(() => {
       <el-radio-group
         :effect="themes"
         v-model="state.basicStyleForm.tablePageStyle"
-        @change="changeBasicStyle('tablePageStyle', true)"
+        @change="changeBasicStyle('tablePageStyle', false)"
       >
         <el-radio :effect="themes" label="simple">{{ t('chart.page_pager_simple') }}</el-radio>
         <el-radio :effect="themes" label="general">{{ t('chart.page_pager_general') }}</el-radio>
@@ -1394,7 +1473,9 @@ onMounted(() => {
               :max="100"
               class="basic-input-number"
               :controls="false"
+              @input="validateInput($event, 'innerRadius')"
               @change="changeBasicStyle('innerRadius')"
+              @keydown="preventInvalidKeydown"
             >
               <template #suffix> % </template>
             </el-input>
@@ -1429,7 +1510,9 @@ onMounted(() => {
               :max="100"
               class="basic-input-number"
               :controls="false"
+              @input="validateInput($event, 'radius')"
               @change="changeBasicStyle('radius')"
+              @keydown="preventInvalidKeydown"
             >
               <template #suffix> % </template>
             </el-input>
@@ -1501,7 +1584,7 @@ onMounted(() => {
       </el-row>
     </div>
     <!-- circle-packing end -->
-  </div>
+  </el-form>
 </template>
 <style scoped lang="less">
 .color-picker-style {
@@ -1674,5 +1757,13 @@ onMounted(() => {
   display: flex;
   flex-direction: row;
   align-items: center;
+}
+.radius-class {
+  :deep(.ed-radio) {
+    margin-right: 30px !important;
+  }
+  .ed-radio:last-child {
+    margin-right: 0px !important;
+  }
 }
 </style>

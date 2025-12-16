@@ -1,10 +1,11 @@
 <script lang="ts" setup>
 import type { DatePickType } from 'element-plus-secondary'
-import { toRefs, computed } from 'vue'
+import { toRefs, computed, watch } from 'vue'
 import { type TimeRange } from './time-format'
 import { useI18n } from '@/hooks/web/useI18n'
 import DynamicTime from './DynamicTimeFiltering.vue'
 import DynamicTimeRange from './DynamicTimeRangeFiltering.vue'
+import { ManipulateType } from 'dayjs'
 const props = withDefaults(
   defineProps<{
     timeRange: TimeRange
@@ -212,6 +213,10 @@ const relativeToCurrentListRange = computed(() => {
         {
           label: t('v_query.last_12_months'),
           value: 'LastTwelveMonths'
+        },
+        {
+          label: t('common.to_this_month'),
+          value: 'YearToThisMonth'
         }
       ]
       break
@@ -237,6 +242,10 @@ const relativeToCurrentListRange = computed(() => {
         {
           label: t('v_query.year_to_date'),
           value: 'yearBeginning'
+        },
+        {
+          label: t('common.month_to_yesterday'),
+          value: 'monthToYesterday'
         }
       ]
       break
@@ -253,6 +262,35 @@ const relativeToCurrentListRange = computed(() => {
     }
   ]
 })
+watch(
+  () => relativeToCurrentListRange.value,
+  val => {
+    if (!val.some(ele => ele.value === timeRange.value.relativeToCurrentRange)) {
+      timeRange.value.relativeToCurrentRange = val[0].value
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => relativeToCurrentList.value,
+  val => {
+    if (!val.some(ele => ele.value === timeRange.value.relativeToCurrent)) {
+      timeRange.value.relativeToCurrent = val[0].value
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => relativeToCurrentTypeList.value,
+  val => {
+    if (!val.some(ele => ele.value === timeRange.value.relativeToCurrentType)) {
+      timeRange.value.relativeToCurrentType = val[0].value as ManipulateType
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -416,6 +454,9 @@ const relativeToCurrentListRange = computed(() => {
     margin-right: 24px;
     --ed-radio-input-height: 16px;
     --ed-radio-input-width: 16px;
+  }
+  .ed-select {
+    --ed-select-width: 100px;
   }
   .title {
     font-size: 14px;

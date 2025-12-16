@@ -211,7 +211,11 @@
                       <template v-if="state.linkJumpInfo.targetDvId">
                         <div class="jump-com-list">
                           <el-tabs size="small" v-model="state.activeCollapse">
-                            <el-tab-pane :label="t('visualization.linkage_view')" name="view">
+                            <el-tab-pane
+                              v-if="!isIndicator"
+                              :label="t('visualization.linkage_view')"
+                              name="view"
+                            >
                             </el-tab-pane>
                             <el-tab-pane
                               :label="t('visualization.with_filter_params')"
@@ -236,7 +240,12 @@
                                 state.linkJumpInfo?.jumpType === 'newPop'
                             }"
                           >
-                            <el-scrollbar height="fit-content" max-height="178px">
+                            <el-scrollbar
+                              height="fit-content"
+                              :max-height="
+                                state.linkJumpInfo?.jumpType === 'newPop' ? '138px' : '178px'
+                              "
+                            >
                               <div
                                 style="display: flex; margin-bottom: 6px"
                                 v-for="(
@@ -667,11 +676,6 @@ const selectSourceTips = t('visualization.select_target_resource')
 
 const targetSource = t('visualization.target_dashboard_dataV')
 
-const curSource =
-  dvInfo.value.type === 'dashboard'
-    ? t('visualization.cur_dashboard')
-    : t('visualization.cur_screen')
-
 const state = reactive({
   curDataVWeight: 0,
   activeCollapse: 'view',
@@ -682,6 +686,7 @@ const state = reactive({
   tempId: null,
   initState: false,
   viewId: null,
+  viewType: null,
   name2Auto: [],
   searchField: '',
   searchFunction: '',
@@ -768,17 +773,18 @@ const initCurFilterFieldArray = componentDataCheck => {
   })
 }
 
+const isIndicator = computed(() => 'indicator' === state.viewType)
+
 const init = viewItem => {
   state.initState = false
   state.viewId = viewItem.id
-  state.activeCollapse = 'view'
+  state.viewType = viewItem.type
+  state.activeCollapse = isIndicator.value ? 'filter' : 'view'
   const chartDetails = canvasViewInfo.value[state.viewId] as ChartObj
   state.curJumpViewInfo = chartDetails
   let checkAllAxisStr =
     JSON.stringify(chartDetails.xAxis) +
     JSON.stringify(chartDetails.xAxisExt) +
-    JSON.stringify(chartDetails.yAxis) +
-    JSON.stringify(chartDetails.yAxisExt) +
     JSON.stringify(chartDetails.drillFields)
   let checkJumpStr
   // 堆叠图的可选参数分两种情况 1.如果有堆叠项 则指标只有第一个可选 2.如果没有堆叠项泽所有指标都可以选
@@ -792,10 +798,11 @@ const init = viewItem => {
       JSON.stringify(chartDetails.yAxisExt) +
       JSON.stringify(chartDetails.drillFields)
     checkJumpStr = checkAllAxisStr
-  } else if (chartDetails.type === 'table-pivot') {
-    checkJumpStr = checkAllAxisStr
-  } else if (chartDetails.type === 'table-info') {
-    checkJumpStr = JSON.stringify(chartDetails.xAxis) + JSON.stringify(chartDetails.drillFields)
+  } else if (
+    ['table-normal', 'table-info', 'table-pivot', 'indicator'].includes(chartDetails.type)
+  ) {
+    checkJumpStr =
+      checkAllAxisStr + JSON.stringify(chartDetails.yAxis) + JSON.stringify(chartDetails.yAxisExt)
   } else {
     checkJumpStr = checkAllAxisStr
   }
@@ -978,7 +985,9 @@ const dvNodeClick = data => {
   if (data.leaf) {
     state.curDataVWeight = data.weight
     state.linkJumpInfo.targetViewInfoList = []
-    addLinkJumpField()
+    if (!isIndicator.value) {
+      addLinkJumpField()
+    }
     getPanelViewList(data.id)
   }
 }

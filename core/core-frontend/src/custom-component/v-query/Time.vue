@@ -7,7 +7,14 @@ import { type TimeRange } from './time-format'
 import dayjs from 'dayjs'
 import { useI18n } from '@/hooks/web/useI18n'
 import { useShortcuts } from './shortcuts'
-import { getThisStart, getThisEnd, getLastStart, getAround } from './time-format-dayjs'
+import {
+  getThisStart,
+  getThisEnd,
+  getLastStart,
+  getAround,
+  getAroundStart,
+  getCustomRange
+} from './time-format-dayjs'
 import VanPopup from 'vant/es/popup'
 import VanDatePicker from 'vant/es/date-picker'
 import VanTimePicker from 'vant/es/time-picker'
@@ -139,6 +146,9 @@ watch(
 )
 
 const handleValueChange = () => {
+  selectValue.value = Array.isArray(selectValue.value)
+    ? selectValue.value.map(ele => ele && dayjs(ele).format('YYYY/MM/DD HH:mm:ss'))
+    : selectValue.value && dayjs(selectValue.value).format('YYYY/MM/DD HH:mm:ss')
   const value = Array.isArray(selectValue.value) ? [...selectValue.value] : selectValue.value
   if (!props.isConfig) {
     config.value.selectValue = Array.isArray(selectValue.value)
@@ -232,8 +242,13 @@ const calendarChange = val => {
   startWindowTime.value = +new Date(val[0])
 }
 
-const visibleChange = () => {
+const datePicker = ref()
+
+const visibleChange = (visible: boolean) => {
   startWindowTime.value = 0
+  if (!visible) {
+    datePicker.value?.blur()
+  }
 }
 
 const queryTimeType = computed(() => {
@@ -251,6 +266,7 @@ const disabledDate = val => {
     regularOrTrends,
     regularOrTrendsValue,
     relativeToCurrent,
+    relativeToCurrentRange,
     timeNum,
     relativeToCurrentType,
     around,
@@ -261,6 +277,7 @@ const disabledDate = val => {
     aroundRange
   } = config.value.timeRange || {}
   let isDynamicWindowTime = false
+
   if (startWindowTime.value && dynamicWindow) {
     isDynamicWindowTime =
       dayjs(startWindowTime.value)
@@ -282,7 +299,7 @@ const disabledDate = val => {
   }
   let startTime
   if (relativeToCurrent === 'custom') {
-    startTime = getAround(relativeToCurrentType, around === 'f' ? 'subtract' : 'add', timeNum)
+    startTime = getAroundStart(relativeToCurrentType, around === 'f' ? 'subtract' : 'add', timeNum)
   } else {
     switch (relativeToCurrent) {
       case 'thisYear':
@@ -328,7 +345,10 @@ const disabledDate = val => {
   const startValue = regularOrTrends === 'fixed' ? regularOrTrendsValue : startTime
 
   if (intervalType === 'start') {
-    return timeStamp < +new Date(startValue) || isDynamicWindowTime
+    return (
+      timeStamp < +new Date(dayjs(startValue).startOf('day').format('YYYY/MM/DD HH:mm:ss')) ||
+      isDynamicWindowTime
+    )
   }
 
   if (intervalType === 'end') {
@@ -336,26 +356,31 @@ const disabledDate = val => {
   }
 
   if (intervalType === 'timeInterval') {
-    const startTime =
-      regularOrTrends === 'fixed'
-        ? new Date(
-            dayjs(new Date(regularOrTrendsValue[0]))
-              .startOf(queryTimeType.value)
-              .format('YYYY/MM/DD HH:mm:ss')
-          )
-        : getAround(relativeToCurrentType, around === 'f' ? 'subtract' : 'add', timeNum)
-    const endTime =
-      regularOrTrends === 'fixed'
-        ? new Date(
-            dayjs(new Date(regularOrTrendsValue[1]))
-              .endOf(queryTimeType.value)
-              .format('YYYY/MM/DD HH:mm:ss')
-          )
-        : getAround(
-            relativeToCurrentTypeRange,
-            aroundRange === 'f' ? 'subtract' : 'add',
-            timeNumRange
-          )
+    let endTime
+    if (relativeToCurrentRange === 'custom') {
+      startTime =
+        regularOrTrends === 'fixed'
+          ? new Date(
+              dayjs(new Date(regularOrTrendsValue[0]))
+                .startOf(queryTimeType.value)
+                .format('YYYY/MM/DD HH:mm:ss')
+            )
+          : getAroundStart(relativeToCurrentType, around === 'f' ? 'subtract' : 'add', timeNum)
+      endTime =
+        regularOrTrends === 'fixed'
+          ? new Date(
+              dayjs(new Date(regularOrTrendsValue[1]))
+                .endOf(queryTimeType.value)
+                .format('YYYY/MM/DD HH:mm:ss')
+            )
+          : getAround(
+              relativeToCurrentTypeRange,
+              aroundRange === 'f' ? 'subtract' : 'add',
+              timeNumRange
+            )
+    } else {
+      ;[startTime, endTime] = getCustomRange(relativeToCurrentRange)
+    }
     return (
       timeStamp < +new Date(startTime) - 1000 ||
       timeStamp > +new Date(endTime) ||
@@ -399,8 +424,9 @@ const selectSecond = ref(false)
 
 const setArrValue = () => {
   currentDate.value = currentDate.value.slice(0, getIndex() + 1)
-  const timeFormat =
-    currentDate.value.length === 2 ? currentDate.value.concat(['01']) : currentDate.value
+  const timeFormat = [1, 2].includes(currentDate.value.length)
+    ? currentDate.value.concat(Array([0, 2, 1][currentDate.value.length]).fill('01'))
+    : currentDate.value
   if (isRange.value) {
     const [start, end] = selectValue.value || []
     if (selectSecond.value) {
@@ -454,6 +480,7 @@ const formatDate = computed(() => {
     :key="config.timeGranularityMultiple"
     :type="config.timeGranularityMultiple"
     :style="selectStyle"
+    ref="datePicker"
     @visible-change="visibleChange"
     :disabled-date="disabledDate"
     @calendar-change="calendarChange"

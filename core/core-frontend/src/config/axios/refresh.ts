@@ -55,10 +55,10 @@ export const configHandler = config => {
   if (wsCache.get('user.token')) {
     config.headers['X-DE-TOKEN'] = wsCache.get('user.token')
     const expired = isExpired()
-    if (expired && config.url !== refreshUrl) {
+    if (expired && !config.url.includes(refreshUrl)) {
       if (!getRefreshStatus()) {
         setRefreshStatus(true)
-        refreshApi()
+        refreshApi(Date.now())
           .then(res => {
             if (res?.data?.token) {
               userStore.setToken(res.data.token)

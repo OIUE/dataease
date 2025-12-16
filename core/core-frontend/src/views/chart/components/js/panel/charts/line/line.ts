@@ -20,7 +20,11 @@ import {
   setUpGroupSeriesColor
 } from '@/views/chart/components/js/util'
 import { cloneDeep, defaults, isEmpty } from 'lodash-es'
-import { valueFormatter } from '@/views/chart/components/js/formatter'
+import {
+  calcNiceMinValue,
+  listenYAxisNiceMinEvents,
+  valueFormatter
+} from '@/views/chart/components/js/formatter'
 import {
   LINE_AXIS_TYPE,
   LINE_EDITOR_PROPERTY,
@@ -34,6 +38,7 @@ import { Group } from '@antv/g-canvas'
 
 const { t } = useI18n()
 const DEFAULT_DATA = []
+
 /**
  * 折线图
  */
@@ -68,6 +73,7 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
       type: 'q'
     }
   }
+
   async drawChart(drawOptions: G2PlotDrawOptions<G2Line>): Promise<G2Line> {
     const { chart, action, container } = drawOptions
     chart.container = container
@@ -128,6 +134,7 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
     newChart.on('point:click', action)
     extremumEvt(newChart, chart, options, container)
     configPlotTooltipEvent(chart, newChart)
+    listenYAxisNiceMinEvents(chart, newChart)
     return newChart
   }
 
@@ -150,7 +157,7 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
       fields: [],
       ...tmpOptions.label,
       layout: labelAttr.fullDisplay ? [{ type: 'limit-in-plot' }] : tmpOptions.label.layout,
-      formatter: (data: Datum, _point) => {
+      formatter: (data: Datum) => {
         if (data.EXTREME) {
           return ''
         }
@@ -249,6 +256,9 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
       }
       return { ...tmpOptions, ...axis }
     }
+    if (axisValue?.auto) {
+      return calcNiceMinValue(chart, options, tmpOptions)
+    }
     return tmpOptions
   }
 
@@ -310,9 +320,11 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
       tooltip
     }
   }
+
   public setupSeriesColor(chart: ChartObj, data?: any[]): ChartBasicStyle['seriesColor'] {
     return setUpGroupSeriesColor(chart, data)
   }
+
   protected configLegend(chart: Chart, options: LineOptions): LineOptions {
     const optionTmp = super.configLegend(chart, options)
     if (!optionTmp.legend) {
@@ -325,17 +337,30 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
       if (sort?.length) {
         // 用值域限定排序，有可能出现新数据但是未出现在图表上，所以这边要遍历一下子维度，加到后面，让新数据显示出来
         const data = optionTmp.data
-        data?.forEach(d => {
-          const cat = d['category']
-          if (cat && !sort.includes(cat)) {
-            sort.push(cat)
+        const cats =
+          data?.reduce((p, n) => {
+            const cat = n['category']
+            if (cat && !p.includes(cat)) {
+              p.push(cat)
+            }
+            return p
+          }, []) || []
+        const values = sort.reduce((p, n) => {
+          if (cats.includes(n)) {
+            const index = cats.indexOf(n)
+            if (index !== -1) {
+              cats.splice(index, 1)
+            }
+            p.push(n)
           }
-        })
+          return p
+        }, [])
+        cats.length > 0 && values.push(...cats)
         optionTmp.meta = {
           ...optionTmp.meta,
           category: {
             type: 'cat',
-            values: sort
+            values
           }
         }
       }
@@ -407,6 +432,7 @@ export class Line extends G2PlotChartView<LineOptions, G2Line> {
     }
     return optionTmp
   }
+
   protected setupOptions(chart: Chart, options: LineOptions): LineOptions {
     return flow(
       this.configTheme,

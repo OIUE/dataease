@@ -3,7 +3,7 @@ import { ref, computed, onMounted, reactive, watch } from 'vue'
 import { interactiveStoreWithOut } from '@/store/modules/interactive'
 import { useI18n } from '@/hooks/web/useI18n'
 import { shortcutOption } from '@/views/workbranch/ShortcutOption'
-import { useRouter } from 'vue-router'
+import { useRouter } from 'vue-router_2'
 import { useCache } from '@/hooks/web/useCache'
 import Workbranch from '@/views/mobile/components/Workbranch.vue'
 import request from '@/config/axios'
@@ -118,7 +118,7 @@ const firstChangeActiveName = ref(false)
 
 watch(
   () => tablePaneList.value.length,
-  (v1, v2) => {
+  () => {
     if (tablePaneList.value.length > 0 && !firstChangeActiveName.value) {
       firstChangeActiveName.value = true
       activeTab.value = tablePaneList.value[0].name
@@ -149,6 +149,7 @@ onMounted(() => {
 })
 
 const handleCellClick = ele => {
+  if (ele.extFlag1 === 0) return
   wsCache.set('activeTab', activeTab.value)
   router.push({
     path: '/panel/mobile',
@@ -183,6 +184,7 @@ const formatterTime = val => {
           @click="handleCellClick(ele)"
           v-for="ele in state.tableData"
           :key="ele.id"
+          :style="{ color: ele.extFlag1 === 0 ? '#bbbfc4' : '#1f2329' }"
           size="large"
           :label="ele.name"
           :time="formatterTime(ele.lastEditTime || ele.time)"

@@ -19,7 +19,9 @@ import { LayerPopup, Popup } from '@antv/l7'
 import {
   getMapCenter,
   getMapScene,
-  getMapStyle
+  getMapStyle,
+  mapRendered,
+  qqMapRendered
 } from '@/views/chart/components/js/panel/common/common_antv'
 import { configCarouselTooltip } from '@/views/chart/components/js/panel/charts/map/tooltip-carousel'
 import { filter } from 'lodash-es'
@@ -37,7 +39,8 @@ export class SymbolicMap extends L7ChartView<Scene, L7Config> {
     'title-selector',
     'label-selector',
     'tooltip-selector',
-    'threshold'
+    'threshold',
+    'bubble-animate'
   ]
   propertyInner: EditorPropertyInner = {
     ...MAP_EDITOR_PROPERTY_INNER,
@@ -145,9 +148,13 @@ export class SymbolicMap extends L7ChartView<Scene, L7Config> {
       scene.addPopup(tooltipLayer)
     }
     this.buildLabel(chart, configList)
+    symbolicLayer.once('inited', () => {
+      mapRendered(container)
+    })
     symbolicLayer.on('inited', () => {
       chart.container = container
       configCarouselTooltip(chart, symbolicLayer, symbolicLayer.sourceOption.data, scene)
+      qqMapRendered(scene)
     })
     symbolicLayer.on('click', ev => {
       const data = ev.feature
@@ -216,7 +223,7 @@ export class SymbolicMap extends L7ChartView<Scene, L7Config> {
     const sizeKey = extBubble.length > 0 ? extBubble[0].dataeaseName : ''
 
     //条件颜色
-    const { threshold } = parseJson(chart.senior)
+    const { threshold, bubbleCfg } = parseJson(chart.senior)
     let conditions = []
     if (threshold.enable) {
       conditions = threshold.lineThreshold ?? []
@@ -378,6 +385,15 @@ export class SymbolicMap extends L7ChartView<Scene, L7Config> {
       pointLayer.size('size', [mapSymbolSizeMin, mapSymbolSizeMax])
     } else {
       pointLayer.size(mapSymbolSize)
+    }
+    if (bubbleCfg && bubbleCfg.enable) {
+      pointLayer.animate({ enable: true, speed: bubbleCfg.speed, rings: bubbleCfg.rings })
+      pointLayer.style({
+        ...pointLayer.style,
+        opacity: mapSymbolOpacity / 2
+      })
+    } else {
+      pointLayer.animate(false)
     }
     return pointLayer
   }

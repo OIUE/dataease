@@ -12,7 +12,7 @@
     ref="tabComponentRef"
   >
     <de-custom-tab
-      v-model="editableTabsValue"
+      v-model="element.editableTabsValue"
       @tab-add="addTab"
       :addable="isEditMode"
       :font-color="fontColor"
@@ -88,7 +88,7 @@
         @mouseenter="handleMouseEnter"
         @mouseleave="handleMouseLeave"
         v-for="(tabItem, index) in element.propValue"
-        :class="{ 'switch-hidden': editableTabsValue !== tabItem.name }"
+        :class="{ 'switch-hidden': element.editableTabsValue !== tabItem.name }"
       >
         <de-canvas
           v-if="isEdit && !mobileInPc"
@@ -99,7 +99,7 @@
           :canvas-id="element.id + '--' + tabItem.name"
           :class="moveActive ? 'canvas-move-in' : ''"
           :canvas-position="'tab'"
-          :canvas-active="editableTabsValue === tabItem.name"
+          :canvas-active="element.editableTabsValue === tabItem.name"
           :font-family="fontFamily"
         ></de-canvas>
         <de-preview
@@ -111,7 +111,7 @@
           :canvas-style-data="{}"
           :canvas-view-info="canvasViewInfo"
           :canvas-id="element.id + '--' + tabItem.name"
-          :preview-active="editableTabsValue === tabItem.name"
+          :preview-active="element.editableTabsValue === tabItem.name"
           :show-position="showPosition"
           :outer-scale="scale"
           :font-family="fontFamily"
@@ -161,12 +161,7 @@ import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
 import { guid } from '@/views/visualized/data/dataset/form/util'
 import eventBus from '@/utils/eventBus'
-import {
-  canvasChangeAdaptor,
-  findComponentIndexById,
-  findComponentIndexByIdWithFilterHidden,
-  isDashboard
-} from '@/utils/canvasUtils'
+import { canvasChangeAdaptor, findComponentIndexById, isDashboard } from '@/utils/canvasUtils'
 import DeCustomTab from '@/custom-component/de-tabs/DeCustomTab.vue'
 import DePreview from '@/components/data-visualization/canvas/DePreview.vue'
 import { getPanelAllLinkageInfo } from '@/api/visualization/linkage'
@@ -176,6 +171,11 @@ import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapsho
 import { useI18n } from '@/hooks/web/useI18n'
 import { imgUrlTrans } from '@/utils/imgUtils'
 import Board from '@/components/de-board/Board.vue'
+import ChartCarouselTooltip from '@/views/chart/components/js/g2plot_tooltip_carousel'
+import { debounce } from 'lodash-es'
+import { useEmitt } from '@/hooks/web/useEmitt'
+import { CommonBackground } from '@/components/visualization/component-background/Types'
+import { ShorthandMode } from '@/Types'
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
 const { tabMoveInActiveId, bashMatrixInfo, editMode, mobileInPc } = storeToRefs(dvMainStore)
@@ -254,7 +254,7 @@ const svgInnerInActiveEnable = itemName => {
   const { backgroundImageEnable, backgroundType, innerImage } =
     element.value.titleBackground.inActive
   return (
-    editableTabsValue.value !== itemName &&
+    element.value.editableTabsValue !== itemName &&
     !element.value.titleBackground.multiply &&
     element.value.titleBackground?.enable &&
     backgroundImageEnable &&
@@ -266,12 +266,29 @@ const svgInnerInActiveEnable = itemName => {
 const svgInnerActiveEnable = itemName => {
   const { backgroundImageEnable, backgroundType, innerImage } = element.value.titleBackground.active
   return (
-    (editableTabsValue.value === itemName || element.value.titleBackground.multiply) &&
+    (element.value.editableTabsValue === itemName || element.value.titleBackground.multiply) &&
     element.value.titleBackground?.enable &&
     backgroundImageEnable &&
     backgroundType === 'innerImage' &&
     typeof innerImage === 'string'
   )
+}
+
+// tooltips 轮播会影响tab 展示
+const viewToolTipsChange = () => {
+  element.value.propValue?.forEach(tabItem => {
+    const tMethod =
+      element.value.editableTabsValue === tabItem.name
+        ? ChartCarouselTooltip.resume
+        : ChartCarouselTooltip.paused
+    tabItem.componentData?.forEach(componentItem => {
+      tMethod(componentItem.id)
+      if (componentItem.component === 'Group')
+        componentItem.propValue.forEach(groupItem => {
+          tMethod(groupItem.id)
+        })
+    })
+  })
 }
 
 const handleMouseEnter = () => {
@@ -290,7 +307,6 @@ const state = reactive({
   hoverFlag: false
 })
 const tabsAreaScroll = ref(false)
-const editableTabsValue = ref(null)
 
 // 无边框
 const noBorderColor = ref('none')
@@ -347,7 +363,7 @@ function addTab() {
     closable: true
   }
   element.value.propValue.push(newTab)
-  editableTabsValue.value = newTab.name
+  element.value.editableTabsValue = newTab.name
   snapshotStore.recordSnapshotCache('addTab')
 }
 
@@ -359,7 +375,7 @@ function deleteCur(param) {
       element.value.propValue.splice(len, 1)
       const activeIndex =
         (len - 1 + element.value.propValue.length) % element.value.propValue.length
-      editableTabsValue.value = element.value.propValue[activeIndex].name
+      element.value.editableTabsValue = element.value.propValue[activeIndex].name
       state.tabShow = false
       nextTick(() => {
         state.tabShow = true
@@ -413,28 +429,25 @@ const reloadLinkage = () => {
 
 const componentMoveIn = component => {
   element.value.propValue.forEach((tabItem, index) => {
-    if (editableTabsValue.value === tabItem.name) {
+    if (element.value.editableTabsValue === tabItem.name) {
       //获取主画布当前组件的index
       if (isDashboard()) {
-        const curIndex = findComponentIndexByIdWithFilterHidden(component.id)
-        if (curIndex > -1) {
-          eventBus.emit('removeMatrixItem-canvas-main', curIndex)
-          dvMainStore.setCurComponent({ component: null, index: null })
-          component.canvasId = element.value.id + '--' + tabItem.name
-          const refInstance = currentInstance.refs['tabCanvas_' + index][0]
-          if (refInstance) {
-            const matrixBase = refInstance.getBaseMatrixSize() //矩阵基础大小
-            canvasChangeAdaptor(component, matrixBase)
-            component.x = 1
-            component.y = 200
-            component.style.left = 0
-            component.style.top = 0
-            tabItem.componentData.push(component)
-            refInstance.addItemBox(component) //在适当的时候初始化布局组件
-            nextTick(() => {
-              refInstance.canvasInitImmediately()
-            })
-          }
+        eventBus.emit('removeMatrixItemById-canvas-main', component.id)
+        dvMainStore.setCurComponent({ component: null, index: null })
+        component.canvasId = element.value.id + '--' + tabItem.name
+        const refInstance = currentInstance.refs['tabCanvas_' + index][0]
+        if (refInstance) {
+          const matrixBase = refInstance.getBaseMatrixSize() //矩阵基础大小
+          canvasChangeAdaptor(component, matrixBase)
+          component.x = 1
+          component.y = 200
+          component.style.left = 0
+          component.style.top = 0
+          tabItem.componentData.push(component)
+          refInstance.addItemBox(component) //在适当的时候初始化布局组件
+          nextTick(() => {
+            refInstance.canvasInitImmediately()
+          })
         }
       } else {
         const curIndex = findComponentIndexById(component.id)
@@ -504,9 +517,43 @@ const backgroundStyle = backgroundParams => {
       innerPadding,
       borderRadius
     } = backgroundParams
+    const commonBackground = backgroundParams as CommonBackground
+    const innerPaddingTarget = ['Group'].includes(element.value.component) ? 0 : innerPadding
+    let innerPaddingStyle = innerPaddingTarget * scale.value + 'px'
+    const paddingMode = commonBackground.innerPadding?.mode
+    if (paddingMode === ShorthandMode.Uniform) {
+      innerPaddingStyle = `${commonBackground.innerPadding?.top * scale.value}px`
+    } else if (paddingMode === ShorthandMode.Axis) {
+      innerPaddingStyle = `${commonBackground.innerPadding?.top * scale.value}px ${
+        commonBackground.innerPadding?.left * scale.value
+      }px`
+    } else if (paddingMode === ShorthandMode.PerEdge) {
+      innerPaddingStyle = `${commonBackground.innerPadding?.top * scale.value}px ${
+        commonBackground.innerPadding?.right * scale.value
+      }px ${commonBackground.innerPadding?.bottom * scale.value}px ${
+        commonBackground.innerPadding?.left * scale.value
+      }px`
+    }
+
+    let borderRadiusStyle = borderRadius + 'px'
+    const borderRadiusMode = commonBackground.borderRadius?.mode
+    if (borderRadiusMode === ShorthandMode.Uniform) {
+      borderRadiusStyle = `${commonBackground.borderRadius?.topLeft * scale.value}px`
+    } else if (borderRadiusMode === ShorthandMode.Axis) {
+      borderRadiusStyle = `${commonBackground.borderRadius?.topLeft * scale.value}px ${
+        commonBackground.borderRadius?.bottomLeft * scale.value
+      }px`
+    } else if (borderRadiusMode === ShorthandMode.PerEdge) {
+      borderRadiusStyle = `${commonBackground.borderRadius?.topLeft * scale.value}px ${
+        commonBackground.borderRadius?.topRight * scale.value
+      }px ${commonBackground.borderRadius?.bottomRight * scale.value}px ${
+        commonBackground.borderRadius?.bottomLeft * scale.value
+      }px`
+    }
+
     let style = {
-      padding: innerPadding * scale.value + 'px',
-      borderRadius: borderRadius + 'px'
+      padding: innerPaddingStyle,
+      borderRadius: borderRadiusStyle
     }
     let colorRGBA = ''
     if (backgroundColorSelect && backgroundColor) {
@@ -531,7 +578,7 @@ const backgroundStyle = backgroundParams => {
 
 const titleStyle = itemName => {
   let style = {}
-  if (editableTabsValue.value === itemName) {
+  if (element.value.editableTabsValue === itemName) {
     style = {
       textDecoration: element.value.style.textDecoration,
       fontStyle: element.value.style.fontStyle,
@@ -610,10 +657,22 @@ const titleValid = computed(() => {
   return !!state.textarea && !!state.textarea.trim()
 })
 
+const viewToolTipsChangeDebounce = debounce(() => {
+  viewToolTipsChange()
+}, 500)
+
+watch(
+  () => scale.value,
+  () => {
+    viewToolTipsChangeDebounce()
+  }
+)
+
 watch(
   () => element.value,
   () => {
     calcTabLength()
+    viewToolTipsChangeDebounce()
   },
   { deep: true }
 )
@@ -646,7 +705,7 @@ const initCarousel = () => {
           const nowIndex = switchCount % element.value.propValue.length
           switchCount++
           nextTick(() => {
-            editableTabsValue.value = element.value.propValue[nowIndex].name
+            element.value.editableTabsValue = element.value.propValue[nowIndex].name
           })
         }
       }, switchTime)
@@ -655,8 +714,9 @@ const initCarousel = () => {
 }
 
 onMounted(() => {
+  document.addEventListener('visibilitychange', viewToolTipsChange)
   if (element.value.propValue.length > 0) {
-    editableTabsValue.value = element.value.propValue[0].name
+    element.value.editableTabsValue = element.value.propValue[0].name
   }
   calcTabLength()
   if (['canvas', 'canvasDataV', 'edit'].includes(showPosition.value) && !mobileInPc.value) {
@@ -664,14 +724,27 @@ onMounted(() => {
     eventBus.on('onTabMoveOut-' + element.value.id, componentMoveOut)
     eventBus.on('onTabSortChange-' + element.value.id, reShow)
   }
-
   currentInstance = getCurrentInstance()
   initCarousel()
   nextTick(() => {
     groupSizeStyleAdaptor(element.value)
   })
+  setTimeout(() => {
+    viewToolTipsChange()
+  }, 1000)
+  useEmitt({
+    name: 'showEnlargeDialog',
+    callback: show => {
+      if (show) {
+        carouselTimer && clearInterval(carouselTimer)
+      } else {
+        initCarousel()
+      }
+    }
+  })
 })
 onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', viewToolTipsChange)
   if (['canvas', 'canvasDataV', 'edit'].includes(showPosition.value) && !mobileInPc.value) {
     eventBus.off('onTabMoveIn-' + element.value.id, componentMoveIn)
     eventBus.off('onTabMoveOut-' + element.value.id, componentMoveOut)

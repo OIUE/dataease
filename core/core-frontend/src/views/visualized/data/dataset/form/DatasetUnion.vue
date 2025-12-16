@@ -8,6 +8,7 @@ import icon_intersect from '@/assets/svg/icon_intersect.svg'
 import icon_leftAssociation from '@/assets/svg/icon_left-association.svg'
 import icon_rightAssociation from '@/assets/svg/icon_right-association.svg'
 import icon_sql_outlined from '@/assets/svg/icon_sql_outlined.svg'
+import { getCSSVariable } from '@/utils/color'
 import referenceTable from '@/assets/svg/reference-table.svg'
 import icon_moreVertical_outlined from '@/assets/svg/icon_more-vertical_outlined.svg'
 import { reactive, computed, ref, nextTick, inject, type Ref, watch, unref } from 'vue'
@@ -19,7 +20,7 @@ import { guid } from './util'
 import { HandleMore } from '@/components/handle-more'
 import { propTypes } from '@/utils/propTypes'
 import UnionFieldList from './UnionFieldList.vue'
-import type { Node, Field } from './util'
+import { type Node, type Field, num } from './util'
 import { getTableField } from '@/api/dataset'
 import type { SqlNode } from './AddSql.vue'
 import { cloneDeep } from 'lodash-es'
@@ -41,8 +42,9 @@ const props = defineProps({
 })
 
 const primaryColor = computed(() => {
-  return appearanceStore.themeColor === 'custom' ? appearanceStore.customColor : '#3370FF'
+  return appearanceStore.themeColor === 'custom' ? appearanceStore.customColor : getCSSVariable()
 })
+const isCross = inject<Ref>('isCross')
 
 const iconName = {
   left: icon_leftAssociation,
@@ -62,7 +64,7 @@ const sqlNode = ref<SqlNode>()
 const allfields = inject('allfields') as Ref
 
 const getNodeField = ({ datasourceId, id, info, tableName, type, currentDsFields }) => {
-  return getTableField({ datasourceId, id, info, tableName, type })
+  return getTableField({ datasourceId, id, info, tableName, type, isCross: isCross.value })
     .then(res => {
       const idOriginNameMap = allfields.value.reduce((pre, next) => {
         pre[`${next.datasetTableId}${next.originName}`] = next.id
@@ -220,18 +222,19 @@ const saveSqlNode = (val: SqlNode, cb) => {
       unionFields: [],
       currentDsFields: []
     })
-    state.visualNode.confirm = true
     if (!state.nodeList.length) {
       state.visualNode.tableName = tableName
-      state.nodeList.push(state.visualNode)
-      currentNode.value = state.nodeList[0]
       getTableField({
         datasourceId,
         id: id,
         info: state.visualNode.info,
         tableName,
-        type: 'sql'
+        type: 'sql',
+        isCross: isCross.value
       }).then(res => {
+        state.visualNode.confirm = true
+        state.nodeList.push(state.visualNode)
+        currentNode.value = state.nodeList[0]
         nodeField.value = res as unknown as Field[]
         nodeField.value.forEach(ele => {
           ele.checked = true
@@ -239,8 +242,20 @@ const saveSqlNode = (val: SqlNode, cb) => {
         state.nodeList[0].currentDsFields = cloneDeep(res)
         cb?.()
         confirmEditUnion()
+        confirm()
       })
-      confirm()
+    } else {
+      getTableField({
+        datasourceId,
+        id: id,
+        info: state.visualNode.info,
+        tableName,
+        type: 'sql',
+        isCross: isCross.value
+      }).then(() => {
+        state.visualNode.confirm = true
+        cb?.()
+      })
     }
     return
   }
@@ -252,6 +267,7 @@ const saveSqlNode = (val: SqlNode, cb) => {
     sqlVariableDetails
   }
   dfsNodeBack([obj], [id], state.nodeList)
+  cb?.()
   emits('reGetName')
 }
 
@@ -267,13 +283,15 @@ const closeSqlNode = () => {
     changeSqlId.value.length === 1
   ) {
     currentNode.value = state.nodeList[0]
-    const { datasourceId, id, info, tableName } = currentNode.value
+    const { datasourceId, id, info, tableName, sqlVariableDetails } = currentNode.value
     getTableField({
       datasourceId,
       id,
       info,
       tableName,
-      type: 'sql'
+      type: 'sql',
+      isCross: isCross.value,
+      sqlVariableDetails: sqlVariableDetails
     }).then(res => {
       const idOriginNameMap = allfields.value.reduce((pre, next) => {
         pre[`${next.datasetTableId}${next.originName}`] = next.id
@@ -326,12 +344,11 @@ const closeEditUnion = () => {
   }
   editUnion.value = false
 }
-let num = +new Date()
 
 const setGuid = (arr, id, datasourceId) => {
   arr.forEach(ele => {
     if (!ele.id) {
-      ele.id = `${++num}`
+      ele.id = `${++num.value}`
       ele.datasetTableId = id
       ele.datasourceId = datasourceId
     }
@@ -370,7 +387,7 @@ const confirmEditUnion = () => {
   if (!!ids.length) {
     const idArr = allfields.value.reduce((pre, next) => {
       if (next.extField === 2) {
-        let idMap = next.originName.match(/\[(.+?)\]/g)
+        let idMap = next.originName.match(/\[(.+?)\]/g) || []
         idMap = idMap.filter(
           itx => !next.params?.map(element => element.id).includes(itx.slice(1, -1))
         )
@@ -429,7 +446,7 @@ const confirmEditUnion = () => {
 }
 
 const handleCommand = (ele, command) => {
-  if (command === 'editerField') {
+  if (command === 'editorField') {
     getNodeField(ele)
     currentNode.value = cloneDeep(ele)
   }
@@ -438,7 +455,7 @@ const handleCommand = (ele, command) => {
     tableRename({ name: ele.tableName, id: ele.id })
   }
 
-  if (command === 'editerSql') {
+  if (command === 'editorSql') {
     const { tableName, datasourceId, info, id, sqlVariableDetails } = ele
     if (ele.type === 'sql') {
       sqlNode.value = {
@@ -458,7 +475,7 @@ const handleCommand = (ele, command) => {
     if (!!fakeDelId.length) {
       const idArr = allfields.value.reduce((pre, next) => {
         if (next.extField === 2) {
-          const idMap = next.originName.match(/\[(.+?)\]/g)
+          const idMap = next.originName.match(/\[(.+?)\]/g) || []
           const result = idMap.map(itm => {
             return itm.slice(1, -1)
           })
@@ -555,7 +572,7 @@ const menuList = [
   {
     svgName: icon_textBox_outlined,
     label: t('data_set.field_selection'),
-    command: 'editerField'
+    command: 'editorField'
   },
   {
     svgName: icon_deleteTrash_outlined,
@@ -568,7 +585,7 @@ const sqlMenu = [
   {
     svgName: icon_edit_outlined,
     label: t('data_set.edit_sql'),
-    command: 'editerSql'
+    command: 'editorSql'
   },
   {
     svgName: icon_rename_outlined,
@@ -914,6 +931,7 @@ const drop_handler = ev => {
       id: currentNode.value.id,
       info: currentNode.value.info,
       tableName,
+      isCross: isCross.value,
       type
     })
       .then(res => {
@@ -1043,7 +1061,7 @@ defineExpose({
 
 const handleActiveNode = ele => {
   activeNodeId.value = ele.id
-  handleCommand(ele, 'editerField')
+  handleCommand(ele, 'editorField')
 }
 
 const emits = defineEmits([
@@ -1196,7 +1214,7 @@ const emits = defineEmits([
   <el-drawer
     :before-close="closeEditUnion"
     v-model="editUnion"
-    custom-class="union-item-drawer"
+    modal-class="union-item-drawer"
     size="600px"
     direction="rtl"
   >

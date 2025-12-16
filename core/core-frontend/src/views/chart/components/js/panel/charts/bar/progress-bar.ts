@@ -3,8 +3,8 @@ import { flow, hexColorToRGBA, parseJson } from '../../../util'
 import {
   configAxisLabelLengthLimit,
   configPlotTooltipEvent,
+  configRoundAngle,
   getTooltipContainer,
-  getTooltipItemConditionColor,
   setGradientColor,
   TOOLTIP_TPL
 } from '../../common/common_antv'
@@ -166,6 +166,7 @@ export class ProgressBar extends G2PlotChartView<BarOptions, G2Progress> {
       }
     })
     if (basicStyle.gradient) {
+      // eslint-disable-next-line
       color1 = color1.map((ele, _index) => {
         return setGradientColor(ele, true, 0)
       })
@@ -184,19 +185,9 @@ export class ProgressBar extends G2PlotChartView<BarOptions, G2Progress> {
         }
       }
     }
-    if (basicStyle.radiusColumnBar === 'roundAngle') {
-      const barStyle = {
-        radius: [
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius
-        ]
-      }
-      options = {
-        ...options,
-        barStyle
-      }
+    options = {
+      ...options,
+      ...configRoundAngle(chart, 'barStyle')
     }
 
     let barWidthRatio

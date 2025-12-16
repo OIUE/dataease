@@ -1,8 +1,7 @@
 <script lang="ts" setup>
 import iconSetting from '@/assets/svg/icon-setting.svg'
-import copilot from '@/assets/svg/copilot.svg'
 import LangSelector from '@/layout/components/LangSelector.vue'
-import { useRouter } from 'vue-router'
+import { useRouter } from 'vue-router_2'
 import TopDesktopCard from './TopDesktopCard.vue'
 import icon_right_outlined from '@/assets/svg/icon_right_outlined.svg'
 import dvAi from '@/assets/svg/dv-ai.svg'
@@ -30,6 +29,7 @@ const redirectUser = () => {
   const kidPath = sysMenu.matched[0].children[0].path
   push(`${sysMenu.path}/${kidPath}`)
 }
+
 const initShowToolbox = () => {
   showToolbox.value = permissionStore.getRouters.some(route => route.path === '/toolbox')
 }
@@ -47,13 +47,10 @@ const initAiBase = async () => {
   })
 }
 
-const handleCopilotClick = () => {
-  push('/copilot/index')
-}
-
 const handleAiClick = () => {
   useEmitt().emitter.emit('aiComponentChange')
 }
+
 onMounted(() => {
   initShowToolbox()
   initAiBase()
@@ -107,14 +104,6 @@ onMounted(() => {
             :cardInfo="{
               icon: dvAi,
               name: $t('commons.assistant')
-            }"
-          ></TopDesktopCard>
-          <TopDesktopCard
-            v-if="appearanceStore.getShowCopilot"
-            @openBlank="handleCopilotClick"
-            :cardInfo="{
-              icon: copilot,
-              name: 'Copilot'
             }"
           ></TopDesktopCard>
         </div>

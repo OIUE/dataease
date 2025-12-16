@@ -13,7 +13,8 @@ import {
   configPlotTooltipEvent,
   configYaxisTitleLengthLimit,
   getTooltipContainer,
-  TOOLTIP_TPL
+  TOOLTIP_TPL,
+  getPadding
 } from '../../common/common_antv'
 import { DEFAULT_LEGEND_STYLE } from '@/views/chart/components/editor/util/chart'
 
@@ -209,7 +210,7 @@ export class Quadrant extends G2PlotChartView<ScatterOptions, G2Scatter> {
       data: data,
       xField: 'yAxis',
       yField: 'yAxisExt',
-      appendPadding: 30,
+      appendPadding: getPadding(chart),
       pointStyle: {
         fillOpacity: 0.8,
         stroke: '#bbb'
@@ -220,6 +221,9 @@ export class Quadrant extends G2PlotChartView<ScatterOptions, G2Scatter> {
     const { Scatter: G2Scatter } = await import('@antv/g2plot/esm/plots/scatter')
     const newChart = new G2Scatter(container, options)
     newChart.on('point:click', action)
+    if (options.label) {
+      newChart.on('label:click', action)
+    }
     newChart.on('click', () => quadrantDefaultBaseline(defaultBaselineQuadrant))
     newChart.on('afterrender', () => quadrantDefaultBaseline(defaultBaselineQuadrant))
     const yAxis = parseJson(chart.customStyle).yAxis
@@ -476,7 +480,6 @@ export class Quadrant extends G2PlotChartView<ScatterOptions, G2Scatter> {
       this.configLegend,
       this.configXAxis,
       this.configYAxis,
-      this.configAnalyse,
       this.configSlider,
       this.configBasicStyle
     )(chart, options, {}, this)

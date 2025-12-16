@@ -15,7 +15,8 @@ import {
   getMapCenter,
   getMapScene,
   getMapStyle,
-  mapRendered
+  mapRendered,
+  qqMapRendered
 } from '@/views/chart/components/js/panel/common/common_antv'
 const { t } = useI18n()
 
@@ -111,6 +112,11 @@ export class FlowMap extends L7ChartView<Scene, L7Config> {
     configList[0].once('inited', () => {
       mapRendered(container)
     })
+    for (let i = 0; i < configList.length; i++) {
+      configList[i].on('inited', () => {
+        qqMapRendered(scene)
+      })
+    }
     return new L7Wrapper(scene, configList)
   }
 

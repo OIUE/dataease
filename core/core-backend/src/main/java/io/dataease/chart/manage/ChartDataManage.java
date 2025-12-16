@@ -10,6 +10,7 @@ import io.dataease.dataset.manage.DatasetGroupManage;
 import io.dataease.dataset.manage.DatasetSQLManage;
 import io.dataease.dataset.manage.DatasetTableFieldManage;
 import io.dataease.dataset.manage.PermissionManage;
+import io.dataease.dataset.utils.DatasetUtils;
 import io.dataease.engine.sql.SQLProvider;
 import io.dataease.engine.trans.*;
 import io.dataease.engine.utils.SQLUtils;
@@ -44,7 +45,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
@@ -110,7 +110,7 @@ public class ChartDataManage {
             DEException.throwException(ResultCode.DATA_IS_WRONG.code(), Translator.get("i18n_chart_not_handler") + ": " + view.getRender() + "," + view.getType());
         }
 
-        var dillAxis = new ArrayList<ChartViewFieldDTO>();
+        var drillAxis = new ArrayList<ChartViewFieldDTO>();
         DatasetGroupInfoDTO table = datasetGroupManage.getDatasetGroupInfoDTO(view.getTableId(), null);
         if (table == null) {
             DEException.throwException(ResultCode.DATA_IS_WRONG.code(), Translator.get("i18n_no_ds"));
@@ -135,14 +135,13 @@ public class ChartDataManage {
         //计数字段
         dataeaseNames.add("*");
         AxisFormatResult formatResult = chartHandler.formatAxis(view);
+        formatResult.getContext().put("dataset", table);
         formatResult.getContext().put("desensitizationList", desensitizationList);
         var xAxis = formatResult.getAxisMap().get(ChartAxis.xAxis);
         var yAxis = formatResult.getAxisMap().get(ChartAxis.yAxis);
         formatResult.getContext().put("allFields", allFields);
         var axisMap = formatResult.getAxisMap();
-        axisMap.forEach((axis, fields) -> {
-            fields.removeIf(fieldDTO -> !dataeaseNames.contains(fieldDTO.getDataeaseName()));
-        });
+        axisMap.forEach((axis, fields) -> fields.removeIf(fieldDTO -> !dataeaseNames.contains(fieldDTO.getDataeaseName())));
 
         // 过滤来自仪表板的条件
         List<ChartExtFilterDTO> extFilterList = new ArrayList<>();
@@ -227,11 +226,13 @@ public class ChartDataManage {
         FilterTreeObj customLinkageFilter = null;
         // 联动条件
         if (ObjectUtils.isNotEmpty(chartExtRequest.getLinkageFilters())) {
-            for(ChartExtFilterDTO linkageFilter: chartExtRequest.getLinkageFilters()) {
-                if (3 == linkageFilter.getFilterType()) {
-                    customLinkageFilter = linkageFilter.getCustomFilter();
-                } else {
-                    filters.add(linkageFilter);
+            for (ChartExtFilterDTO linkageFilter : chartExtRequest.getLinkageFilters()) {
+                if(linkageFilter != null){
+                    if (3 == linkageFilter.getFilterType()) {
+                        customLinkageFilter = linkageFilter.getCustomFilter();
+                    } else {
+                        filters.add(linkageFilter);
+                    }
                 }
             }
         }
@@ -318,7 +319,7 @@ public class ChartDataManage {
                         if (!fields.contains(dim.getId())) {
                             viewField.setSource(FieldSource.DRILL);
                             xAxis.add(viewField);
-                            dillAxis.add(viewField);
+                            drillAxis.add(viewField);
                             fields.add(dim.getId());
                         }
                         if (i == drillRequestList.size() - 1) {
@@ -326,7 +327,7 @@ public class ChartDataManage {
                             if (!fields.contains(nextDrillField.getId())) {
                                 nextDrillField.setSource(FieldSource.DRILL);
                                 xAxis.add(nextDrillField);
-                                dillAxis.add(nextDrillField);
+                                drillAxis.add(nextDrillField);
                                 fields.add(nextDrillField.getId());
                             } else {
                                 Optional<ChartViewFieldDTO> axis = xAxis.stream().filter(x -> Objects.equals(x.getId(), nextDrillField.getId())).findFirst();
@@ -334,7 +335,7 @@ public class ChartDataManage {
                                     field.setSort(nextDrillField.getSort());
                                     field.setCustomSort(nextDrillField.getCustomSort());
                                 });
-                                dillAxis.add(nextDrillField);
+                                drillAxis.add(nextDrillField);
                             }
                         }
                     }
@@ -342,10 +343,10 @@ public class ChartDataManage {
             }
         }
 
-        formatResult.getContext().put("dillAxis", dillAxis);
+        formatResult.getContext().put("drillAxis", drillAxis);
 
         //转义特殊字符
-        extFilterList = extFilterList.stream().peek(ele -> {
+        extFilterList.forEach(ele -> {
             if (ObjectUtils.isNotEmpty(ele.getValue())) {
                 List<String> collect = ele.getValue().stream().map(SQLUtils::transKeyword).collect(Collectors.toList());
                 if (CollectionUtils.isEmpty(ele.getOriginValue())) {
@@ -353,7 +354,7 @@ public class ChartDataManage {
                 }
                 ele.setValue(collect);
             }
-        }).collect(Collectors.toList());
+        });
         // 视图自定义过滤逻辑
         CustomFilterResult filterResult = chartHandler.customFilter(view, extFilterList, formatResult);
 
@@ -372,7 +373,7 @@ public class ChartDataManage {
         Map<String, Object> sqlMap = datasetSQLManage.getUnionSQLForEdit(table, chartExtRequest);
         String sql = (String) sqlMap.get("sql");
         Map<Long, DatasourceSchemaDTO> dsMap = (Map<Long, DatasourceSchemaDTO>) sqlMap.get("dsMap");
-        boolean crossDs = Utils.isCrossDs(dsMap);
+        boolean crossDs = table.getIsCross();
         if (!crossDs) {
             sql = Utils.replaceSchemaAlias(sql, dsMap);
         }
@@ -641,7 +642,6 @@ public class ChartDataManage {
             view.setXAxisExt(new ArrayList<>());
         }
 
-        List<ChartViewFieldDTO> xAxisBase = new ArrayList<>(view.getXAxis());
         List<ChartViewFieldDTO> xAxis = new ArrayList<>(view.getXAxis());
         List<ChartViewFieldDTO> xAxisExt = new ArrayList<>(view.getXAxisExt());
         if (StringUtils.equalsIgnoreCase(view.getType(), "table-pivot")
@@ -717,7 +717,7 @@ public class ChartDataManage {
             dsList.add(next.getValue().getType());
         }
         boolean needOrder = Utils.isNeedOrder(dsList);
-        boolean crossDs = Utils.isCrossDs(dsMap);
+        boolean crossDs = table.getIsCross();
         if (!crossDs) {
             sql = Utils.replaceSchemaAlias(sql, dsMap);
         }
@@ -725,6 +725,7 @@ public class ChartDataManage {
         // 调用数据源的calcite获得data
         DatasourceRequest datasourceRequest = new DatasourceRequest();
         datasourceRequest.setDsList(dsMap);
+        datasourceRequest.setIsCross(crossDs);
 
         Provider provider;
         if (crossDs) {
@@ -813,9 +814,10 @@ public class ChartDataManage {
                     disuseChartIdList.add(chartViewDTO.getId());
                 }
             });
-            if (CollectionUtils.isNotEmpty(disuseChartIdList)) {
-                chartViewManege.disuse(disuseChartIdList);
-            }
+            // 阈值告警处理 统一在发布时处理
+//            if (CollectionUtils.isNotEmpty(disuseChartIdList)) {
+//                chartViewManege.disuse(disuseChartIdList);
+//            }
         }
     }
 
@@ -837,5 +839,16 @@ public class ChartDataManage {
         List<String[]> sqlData = sqlData(view, view.getChartExtRequest(), fieldId);
         List<String[]> result = customSort(Optional.ofNullable(targetField.getCustomSort()).orElse(new ArrayList<>()), sqlData, 0);
         return result.stream().map(i -> i[0]).distinct().collect(Collectors.toList());
+    }
+
+    public void encodeData(ChartViewDTO chartViewDTO) {
+        if (chartViewDTO.getData() != null) {
+            if (chartViewDTO.getType().startsWith("chart-mix")) {
+                DatasetUtils.listEncode((List<ChartViewFieldDTO>) ((Map<String, Object>) chartViewDTO.getData().get("left")).get("sourceFields"));
+                DatasetUtils.listEncode((List<ChartViewFieldDTO>) ((Map<String, Object>) chartViewDTO.getData().get("right")).get("sourceFields"));
+            } else {
+                DatasetUtils.listEncode((List<ChartViewFieldDTO>) chartViewDTO.getData().get("sourceFields"));
+            }
+        }
     }
 }

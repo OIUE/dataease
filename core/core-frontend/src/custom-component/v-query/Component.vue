@@ -16,6 +16,7 @@ import {
   reactive,
   ref,
   toRefs,
+  unref,
   watch,
   computed,
   onMounted,
@@ -91,6 +92,7 @@ const defaultStyle = {
   queryConditionWidth: 227,
   nameboxSpacing: 8,
   queryConditionSpacing: 16,
+  queryConditionHeight: 32,
   btnColor: '#3370ff',
   labelColorBtn: '#ffffff'
 }
@@ -116,19 +118,46 @@ const btnStyle = computed(() => {
   return style
 })
 
+function rgbaTo16color(color) {
+  let val = color
+    .replace(/rgba?\(/, '')
+    .replace(/\)/, '')
+    .replace(/[\s+]/g, '')
+    .split(',')
+  let a = parseFloat(val[3] || 1),
+    r = Math.floor(a * parseInt(val[0]) + (1 - a) * 255),
+    g = Math.floor(a * parseInt(val[1]) + (1 - a) * 255),
+    b = Math.floor(a * parseInt(val[2]) + (1 - a) * 255)
+  return (
+    '#' +
+    ('0' + r.toString(16)).slice(-2) +
+    ('0' + g.toString(16)).slice(-2) +
+    ('0' + b.toString(16)).slice(-2)
+  )
+}
+
 const btnHoverStyle = computed(() => {
+  let btnColor = customStyle.btnColor
+  if (customStyle.btnColor.startsWith('rgb')) {
+    btnColor = rgbaTo16color(customStyle.btnColor)
+  }
+
+  if (btnColor.startsWith('#')) {
+    btnColor = btnColor.substr(1)
+  }
+
   return {
     rawColor: customStyle.btnColor ?? '#3370ff',
     hoverColor: customStyle.btnColor
       ? colorFunctions
-          .mix(new colorTree('ffffff'), new colorTree(customStyle.btnColor.substr(1)), {
+          .mix(new colorTree('ffffff'), new colorTree(btnColor), {
             value: 15
           })
           .toRGB()
       : '#5285FF',
     activeColor: customStyle.btnColor
       ? colorFunctions
-          .mix(new colorTree('000000'), new colorTree(customStyle.btnColor.substr(1)), {
+          .mix(new colorTree('000000'), new colorTree(btnColor), {
             value: 15
           })
           .toRGB()
@@ -206,6 +235,7 @@ const setCustomStyle = val => {
     queryConditionWidth,
     nameboxSpacing,
     queryConditionSpacing,
+    queryConditionHeight,
     labelColorBtn,
     btnColor,
     placeholderSize,
@@ -239,6 +269,7 @@ const setCustomStyle = val => {
   customStyle.queryConditionWidth = queryConditionWidth ?? 227
   customStyle.nameboxSpacing = nameboxSpacing ?? 8
   customStyle.queryConditionSpacing = queryConditionSpacing ?? 16
+  customStyle.queryConditionHeight = queryConditionHeight ?? 32
   customStyle.labelColorBtn = labelColorBtn || '#ffffff'
   customStyle.labelShow = labelShow ?? true
   customStyle.btnColor = btnColor || '#3370ff'
@@ -289,6 +320,11 @@ const { emitter } = useEmitt()
 const unMountSelect = shallowRef([])
 onBeforeMount(() => {
   unMountSelect.value = list.value.map(ele => ele.id)
+  ;(props.element.cascade || []).forEach(ele => {
+    ele.forEach(item => {
+      item.currentSelectValue = item.selectValue
+    })
+  })
 })
 
 const releaseSelect = id => {
@@ -319,22 +355,26 @@ const getKeyList = next => {
 }
 
 const fillRequireVal = arr => {
-  element.value.propValue.forEach(next => {
+  element.value.propValue?.forEach(next => {
     if (arr.some(itx => next.checkedFields.includes(itx)) && next.required) {
       if (next.displayType === '8') {
         const { conditionValueF, conditionValueS, conditionType } = next
         if (conditionType === 0 && conditionValueF === '') {
           next.conditionValueF = next.defaultConditionValueF
-        } else if (conditionValueF === '' || conditionValueS === '') {
-          next.conditionValueF = next.defaultConditionValueF
-          next.conditionValueS = next.defaultConditionValueS
+        } else {
+          if (conditionValueF === '') {
+            next.conditionValueF = next.defaultConditionValueF
+          }
+          if (conditionValueS === '') {
+            next.conditionValueS = next.defaultConditionValueS
+          }
         }
       } else if (next.displayType === '22') {
-        if (
-          (next.numValueStart !== 0 && !next.numValueStart) ||
-          (next.numValueEnd !== 0 && !next.numValueEnd)
-        ) {
+        if (next.numValueStart !== 0 && !next.numValueStart) {
           next.numValueStart = next.defaultNumValueStart
+        }
+
+        if (next.numValueEnd !== 0 && !next.numValueEnd) {
           next.numValueEnd = next.defaultNumValueEnd
         }
       } else if (
@@ -439,8 +479,8 @@ const getPlaceholder = computed(() => {
   }
 })
 
-const isConfirmSearch = id => {
-  if (componentWithSure.value) return
+const isConfirmSearch = (id, disabledFirstItem = false) => {
+  if (componentWithSure.value && !disabledFirstItem) return
   queryDataForId(id)
 }
 
@@ -462,7 +502,7 @@ onBeforeUnmount(() => {
 const updateQueryCriteria = () => {
   if (dvMainStore.mobileInPc && !isMobile()) return
   Array.isArray(element.value.propValue) &&
-    element.value.propValue.forEach(ele => {
+    element.value.propValue?.forEach(ele => {
       if (ele.auto) {
         const componentInfo = {
           datasetId: ele.dataset.id,
@@ -554,10 +594,26 @@ const addCriteriaConfigOut = () => {
   queryConfig.value.setConditionOut()
 }
 
+const reRenderAll = (oldArr, newArr) => {
+  const newArrIds = newArr.map(ele => ele.id)
+  const emitterList = (oldArr || []).reduce((pre, next) => {
+    if (newArrIds.includes(next.id)) return pre
+    const keyList = getKeyList(next)
+    pre = [...new Set([...keyList, ...pre])]
+    return pre
+  }, [])
+  if (!emitterList.length) return
+  emitterList.forEach(ele => {
+    emitter.emit(`query-data-${ele}`)
+  })
+}
+
 const delQueryConfig = index => {
+  const com = cloneDeep(unref(list))
   list.value.splice(index, 1)
   element.value.propValue = [...list.value]
   snapshotStore.recordSnapshotCache('delQueryConfig')
+  reRenderAll(com, cloneDeep(unref(list)))
 }
 
 const resetData = () => {
@@ -652,6 +708,10 @@ watch(
 
 const boxWidth = computed(() => {
   return `${customStyle.placeholderSize}px`
+})
+
+const boxHeight = computed(() => {
+  return `${customStyle.queryConditionHeight || 32}px`
 })
 
 const queryData = () => {
@@ -894,6 +954,7 @@ const autoStyle = computed(() => {
       :query-element="element"
       @queryData="queryData"
       ref="queryConfig"
+      @reRenderAll="reRenderAll"
     ></QueryConditionConfiguration>
   </Teleport>
 </template>
@@ -906,8 +967,20 @@ const autoStyle = computed(() => {
   position: relative;
   --ed-font-size-base: v-bind(boxWidth);
 
-  :deep(.ed-select-v2 .ed-select-v2__selection .ed-tag) {
+  :deep(.ed-select-v2 .ed-select-v2__selection .ed-tag),
+  :deep(.select-trigger .ed-select__tags .ed-tag) {
     background-color: v-bind(tagColor);
+  }
+
+  :deep(.ed-input),
+  :deep(.ed-date-editor) {
+    --ed-input-height: v-bind(boxHeight);
+  }
+
+  :deep(.ed-select__wrapper),
+  :deep(.text-search-select .ed-input__wrapper),
+  :deep(.text-search-select .ed-select__wrapper) {
+    height: v-bind(boxHeight);
   }
 
   .ed-button--primary {
@@ -932,7 +1005,8 @@ const autoStyle = computed(() => {
     --ed-tag-font-size: v-bind(boxWidth);
   }
 
-  :deep(.ed-select-v2) {
+  :deep(.ed-select-v2),
+  :deep(.ed-select__wrapper) {
     font-size: v-bind(boxWidth);
   }
 

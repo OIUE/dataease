@@ -26,7 +26,6 @@ import {
   onBeforeMount
 } from 'vue'
 import { imgUrlTrans } from '@/utils/imgUtils'
-import eventBus from '@/utils/eventBus'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { getData } from '@/api/chart'
 import { parseJson } from '@/views/chart/components/js/util'
@@ -35,7 +34,7 @@ import { storeToRefs } from 'pinia'
 import ChartEmptyInfo from '@/views/chart/components/views/components/ChartEmptyInfo.vue'
 import ChartError from '@/views/chart/components/views/components/ChartError.vue'
 const dvMainStore = dvMainStoreWithOut()
-const { canvasViewInfo, editMode, mobileInPc, canvasStyleData } = storeToRefs(dvMainStore)
+const { canvasViewInfo, mobileInPc, fullscreenFlag } = storeToRefs(dvMainStore)
 const state = reactive({
   emptyValue: '-',
   data: null,
@@ -60,6 +59,12 @@ const props = defineProps({
     type: String,
     default: 'preview'
   },
+  // 仪表板刷新计时器
+  searchCount: {
+    type: Number,
+    required: false,
+    default: 0
+  },
   view: {
     type: Object as PropType<ChartObj>,
     default() {
@@ -76,8 +81,38 @@ const dataRowNameSelect = ref({})
 const dataRowFiledName = ref([])
 let carouselTimer = null
 const { element, view, showPosition } = toRefs(props)
+let innerRefreshTimer = null
+let innerSearchCount = 0
+const isEditMode = computed(
+  () => showPosition.value.includes('canvas') && !mobileInPc.value && !fullscreenFlag.value
+)
 
-const isEditMode = computed(() => showPosition.value.includes('canvas') && !mobileInPc.value)
+watch([() => props.searchCount], () => {
+  // 内部计时器启动 忽略外部计时器
+  if (!innerRefreshTimer) {
+    calcData(view.value, () => {
+      // do searchCount
+    })
+  }
+})
+
+// 编辑状态下 不启动刷新
+const buildInnerRefreshTimer = (
+  refreshViewEnable = false,
+  refreshUnit = 'minute',
+  refreshTime = 5
+) => {
+  if (showPosition.value === 'preview' && !innerRefreshTimer && refreshViewEnable) {
+    innerRefreshTimer && clearInterval(innerRefreshTimer)
+    const timerRefreshTime = refreshUnit === 'second' ? refreshTime * 1000 : refreshTime * 60000
+    innerRefreshTimer = setInterval(() => {
+      calcData(view.value, () => {
+        // do innerRefreshTimer
+      })
+      innerSearchCount++
+    }, timerRefreshTime)
+  }
+}
 
 watch(
   () => isEditMode.value,
@@ -120,12 +155,6 @@ const imageAdapter = computed(() => {
   }
   return style as CSSProperties
 })
-
-const uploadImg = () => {
-  nextTick(() => {
-    eventBus.emit('uploadImg')
-  })
-}
 
 const initCurFields = chartDetails => {
   dataRowFiledName.value = []
@@ -251,7 +280,7 @@ const calcData = (viewCalc: Chart, callback) => {
 }
 
 // 初始化此处不必刷新
-const renderChart = viewInfo => {
+const renderChart = () => {
   //do renderView
 }
 
@@ -260,6 +289,7 @@ onBeforeMount(() => {
     clearInterval(carouselTimer)
     carouselTimer = null
   }
+  buildInnerRefreshTimer()
 })
 
 defineExpose({

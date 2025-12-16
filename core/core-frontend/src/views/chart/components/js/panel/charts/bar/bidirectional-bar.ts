@@ -2,18 +2,18 @@ import {
   G2PlotChartView,
   G2PlotDrawOptions
 } from '@/views/chart/components/js/panel/types/impl/g2plot'
-import { cloneDeep, defaultTo, isEmpty, map } from 'lodash-es'
+import { cloneDeep, defaults, defaultTo, isEmpty, map } from 'lodash-es'
 import {
   configAxisLabelLengthLimit,
   configPlotTooltipEvent,
+  configRoundAngle,
   getPadding,
   getTooltipContainer,
   getTooltipItemConditionColor,
   getYAxis,
   getYAxisExt,
   setGradientColor,
-  TOOLTIP_TPL,
-  addConditionsStyleColorToData
+  TOOLTIP_TPL
 } from '@/views/chart/components/js/panel/common/common_antv'
 import type {
   BidirectionalBar as G2BidirectionalBar,
@@ -213,19 +213,9 @@ export class BidirectionalHorizontalBar extends G2PlotChartView<
       ...options,
       layout: basicStyle.layout
     }
-    if (basicStyle.radiusColumnBar === 'roundAngle') {
-      const barStyle = {
-        radius: [
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius
-        ]
-      }
-      options = {
-        ...options,
-        barStyle
-      }
+    options = {
+      ...options,
+      ...configRoundAngle(chart, 'barStyle')
     }
     return options
   }
@@ -237,6 +227,12 @@ export class BidirectionalHorizontalBar extends G2PlotChartView<
     }
     if (tmpOptions.xAxis.label) {
       delete tmpOptions.xAxis.label.style.textAlign
+      const { lengthLimit } = parseJson(chart.customStyle).xAxis.axisLabel
+      defaults(tmpOptions.xAxis.label, {
+        formatter: value => {
+          return value?.length > lengthLimit ? value.substring(0, lengthLimit) + '...' : value
+        }
+      })
     }
     return tmpOptions
   }

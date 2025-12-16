@@ -14,7 +14,7 @@ import {
 import { useI18n } from '@/hooks/web/useI18n'
 import { flow, parseJson } from '@/views/chart/components/js/util'
 import { BulletOptions } from '@antv/g2plot'
-import { cloneDeep, isEmpty } from 'lodash-es'
+import { isEmpty } from 'lodash-es'
 import {
   configAxisLabelLengthLimit,
   configPlotTooltipEvent,
@@ -57,9 +57,14 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
     'basic-style-selector': ['radiusColumnBar', 'layout'],
     'label-selector': ['hPosition', 'fontSize', 'color', 'labelFormatter'],
     'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'seriesTooltipFormatter', 'show'],
-    'x-axis-selector': [...BAR_EDITOR_PROPERTY_INNER['x-axis-selector'], 'showLengthLimit'],
+    'x-axis-selector': [
+      ...BAR_EDITOR_PROPERTY_INNER['x-axis-selector'].filter(item => item != 'position'),
+      'showLengthLimit'
+    ],
     'y-axis-selector': [
-      ...BAR_EDITOR_PROPERTY_INNER['y-axis-selector'].filter(item => item !== 'axisValue'),
+      ...BAR_EDITOR_PROPERTY_INNER['y-axis-selector'].filter(
+        item => item !== 'axisValue' && item !== 'position'
+      ),
       'axisLabelFormatter'
     ],
     'legend-selector': ['showRange', 'orient', 'fontSize', 'color', 'hPosition', 'vPosition']
@@ -68,65 +73,7 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
   async drawChart(drawOption: G2PlotDrawOptions<G2Bullet>): Promise<G2Bullet> {
     const { chart, container, action } = drawOption
     if (!chart.data?.data?.length) return
-    // 先根据维度分组，再根据指标字段组装成子弹图的格式
-    const groupedData = chart.data.data.reduce((acc, item) => {
-      const field = item.field
-      if (!acc[field]) {
-        acc[field] = []
-      }
-      acc[field].push(item)
-      return acc
-    }, {})
-    const result = []
-    // 组装子弹图数据，每个维度对应一个子弹图
-    Object.keys(groupedData).forEach(field => {
-      const items = groupedData[field]
-      const entry = {
-        title: field,
-        ranges: new Set(),
-        measures: new Set(),
-        target: new Set(),
-        dimensionList: items[0].dimensionList,
-        quotaList: []
-      }
-      console.log(`Field: ${field}`)
-      items.forEach(item => {
-        const quotaId = item.quotaList[0]?.id
-        const v = item.value || 0
-        if (quotaId === chart.yAxis[0]?.id) {
-          entry.measures.add(v)
-        }
-        if (quotaId === chart.yAxisExt[0]?.id) {
-          entry.target.add(v)
-        }
-        if (quotaId === chart.extBubble[0]?.id) {
-          entry.ranges.add(v)
-        }
-        entry.quotaList.push(item.quotaList[0])
-      })
-      entry['minRanges'] = cloneDeep([...entry.ranges])
-      entry['originalRanges'] = [...entry.ranges]
-      entry['originalTarget'] = [...entry.target]
-      entry.ranges = [...entry.ranges]
-      entry.measures = [...entry.measures]
-      entry.target = [...entry.target]
-      result.push(entry)
-    })
-    // 由于图库存在目标大于区间数据时，目标值的显示与实际值的显示的刻度值不一致的问题，所以需要对目标值和区间值进行处理
-    // 需要将目标值和区间值的最大值设置为130%的目标值
-    const maxRanges = Math.max(...result.map(item => item.ranges[0] || 0))
-    const maxTarget = Math.max(...result.map(item => item.target[0] || 0))
-    // 如果maxRanges小于maxTarget30%,则maxRanges设置为maxTarget的130%,向下取整
-    const roundToNearestTen = (num: number) => {
-      return num % 10 < 5 ? Math.floor(num / 10) * 10 : Math.ceil(num / 10) * 10
-    }
-    const minRanges = maxTarget * 1.25
-    if (maxRanges < minRanges) {
-      result.forEach(item => {
-        item.ranges = [roundToNearestTen(minRanges)]
-        item.originalRanges = item.ranges
-      })
-    }
+    const result = mergeBulletData(chart)
     // 处理自定义区间
     const { bullet } = parseJson(chart.customAttr).misc
     if (bullet.bar.ranges.showType === 'fixed') {
@@ -150,7 +97,7 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
       targetField: 'target',
       xField: 'title',
       meta: {
-        ['title']: {
+        title: {
           type: 'cat'
         }
       },
@@ -181,7 +128,6 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
           }
         }
       }
-      console.log(actionParams)
       action(actionParams)
     })
     configPlotTooltipEvent(chart, newChart)
@@ -194,23 +140,42 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
     const { radiusColumnBar, columnBarRightAngleRadius, layout } = basicStyle
     let radiusValue = 0
     let rangeLength = 1
-    if (radiusColumnBar === 'roundAngle') {
+    if (radiusColumnBar === 'roundAngle' || radiusColumnBar === 'topRoundAngle') {
       radiusValue = columnBarRightAngleRadius
       rangeLength = options.data[0]?.ranges?.length
     }
-    const barRadiusStyle = { radius: Array(4).fill(radiusValue) }
+    const barRadiusStyle = { radius: Array(2).fill(radiusValue) }
+    const baseRadius = [...barRadiusStyle.radius, ...barRadiusStyle.radius]
     options = {
       ...options,
       bulletStyle: {
         range: datum => {
           if (!datum.rKey) return { fill: 'rgba(0, 0, 0, 0)' }
-          if (rangeLength === 1) return barRadiusStyle
-          if (rangeLength > 1 && datum.rKey === 'ranges_0')
-            return { radius: [0, 0, radiusValue, radiusValue] }
-          if (rangeLength > 1 && datum.rKey === 'ranges_' + (rangeLength - 1))
-            return { radius: [radiusValue, radiusValue, 0, 0] }
+          if (rangeLength === 1) {
+            return {
+              radius:
+                radiusColumnBar === 'topRoundAngle' ? [...barRadiusStyle.radius, 0, 0] : baseRadius
+            }
+          }
+          if (rangeLength > 1 && datum.rKey === 'ranges_0') {
+            return {
+              radius: radiusColumnBar === 'topRoundAngle' ? [] : [0, 0, ...barRadiusStyle.radius]
+            }
+          }
+          if (rangeLength > 1 && datum.rKey === 'ranges_' + (rangeLength - 1)) {
+            return { radius: [...barRadiusStyle.radius, 0, 0] }
+          }
         },
-        measure: datum => (datum.measures ? barRadiusStyle : undefined),
+        measure: datum => {
+          if (datum.measures) {
+            return {
+              radius:
+                radiusColumnBar === 'topRoundAngle' ? [...barRadiusStyle.radius, 0, 0] : baseRadius
+            }
+          } else {
+            return undefined
+          }
+        },
         target: datum => (datum.tKey === 'target' ? { lineWidth: 2 } : undefined)
       }
     }
@@ -221,9 +186,12 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
   protected configMisc(chart: Chart, options: BulletOptions): BulletOptions {
     const { bullet } = parseJson(chart.customAttr).misc
     const isDynamic = bullet.bar.ranges.showType === 'dynamic'
+    // 动态背景按大小升序
     const rangeColor = isDynamic
       ? bullet.bar.ranges.fill
-      : bullet.bar.ranges.fixedRange?.map(item => item.fill) || []
+      : bullet.bar.ranges.fixedRange
+          ?.sort((a, b) => (a.fixedRangeValue ?? 0) - (b.fixedRangeValue ?? 0))
+          .map(item => item.fill) || []
     return {
       ...options,
       color: {
@@ -277,18 +245,7 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
       style.textAlign = 'center'
       style.textBaseline = position === 'left' ? 'top' : 'bottom'
     }
-
-    yAxisConfig.label.style = style
-    const maxRanges = Math.max(
-      ...options.data.map(item => item.ranges[item.ranges.length - 1] || 0)
-    )
-    const maxTarget = Math.max(
-      ...options.data.map(item => item.target[item.target.length - 1] || 0)
-    )
-    const maxMeasure = Math.max(
-      ...options.data.map(item => item.measures[item.measures.length - 1] || 0)
-    )
-    yAxisConfig.maxLimit = Math.max(maxRanges, maxTarget, maxMeasure)
+    tmpOptions.yAxis.nice = false
     return tmpOptions
   }
 
@@ -330,7 +287,7 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
               'dynamic',
               rangeName || chart.extBubble[0]?.name,
               bullet.bar.ranges.symbol,
-              bullet.bar.ranges.fill,
+              [].concat(bullet.bar.ranges.fill)[0],
               bullet.bar.ranges.symbolSize
             )
           )
@@ -356,7 +313,7 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
         'target',
         targetName || chart.yAxisExt[0]?.name,
         'line',
-        bullet.bar.target.fill,
+        [].concat(bullet.bar.target.fill)[0],
         bullet.bar.ranges.symbolSize
       )
     )
@@ -367,7 +324,7 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
         'measure',
         measureName || chart.yAxis[0]?.name,
         'square',
-        bullet.bar.measures.fill[0],
+        [].concat(bullet.bar.measures.fill)[0],
         bullet.bar.ranges.symbolSize
       )
     )
@@ -386,10 +343,20 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
 
     const formatterMap = tooltipAttr.seriesTooltipFormatter
       ?.filter(i => i.show)
-      .reduce((pre, next, index) => {
-        const keys = ['measures', 'target', 'ranges']
-        if (keys[index]) pre[keys[index]] = next
-        return pre
+      .reduce((pre, next, _index) => {
+        switch (next.axisType) {
+          case 'yAxis':
+            pre['measures'] = next
+            return pre
+          case 'yAxisExt':
+            pre['target'] = next
+            return pre
+          case 'extBubble':
+            pre['ranges'] = next
+            return pre
+          default:
+            return pre
+        }
       }, {}) as Record<string, SeriesFormatter>
 
     const tooltip = {
@@ -397,50 +364,57 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
       showMarkers: true,
       customItems(originalItems) {
         if (!tooltipAttr.seriesTooltipFormatter?.length) return originalItems
-
+        const isDynamic = bullet.bar.ranges.showType === 'dynamic'
+        const rangeFormatter = chart.extBubble[0]
         const result = []
         const data = options.data.find(item => item.title === originalItems[0].title)
-        Object.keys(formatterMap).forEach(key => {
+        Object.keys(formatterMap).forEach((key, _index) => {
           if (key === '记录数*') return
           const formatter = formatterMap[key]
           if (formatter) {
-            if (key !== 'ranges') {
-              let value = 0
-              if (chart.yAxis[0].id === chart.yAxisExt[0].id) {
-                value = valueFormatter(parseFloat(data['target'] as string), formatter.formatterCfg)
+            let name = isEmpty(formatter.chartShowName) ? formatter.name : formatter.chartShowName
+            let value = valueFormatter(parseFloat(data[key] as string), formatter.formatterCfg)
+            let color = bullet.bar[key]?.fill ?? 'grey'
+            if (key === 'ranges') {
+              if (!isDynamic && rangeFormatter) {
+                name = isEmpty(rangeFormatter.chartShowName)
+                  ? rangeFormatter.name
+                  : rangeFormatter.chartShowName
+                value = valueFormatter(parseFloat(data.minRanges[0]), rangeFormatter.formatterCfg)
+                color = 'grey'
               } else {
-                value = valueFormatter(parseFloat(data[key] as string), formatter.formatterCfg)
+                return
               }
-              const name = isEmpty(formatter.chartShowName)
-                ? formatter.name
-                : formatter.chartShowName
-              result.push({ ...originalItems[0], color: bullet.bar[key].fill, name, value })
-            } else {
-              const ranges = data.ranges
-              const isDynamic = bullet.bar.ranges.showType === 'dynamic'
-              ranges.forEach((range, index) => {
-                const value = valueFormatter(
-                  parseFloat(isDynamic ? data.minRanges[0] : (range as string)),
-                  formatter.formatterCfg
-                )
-                let name = ''
-                let color: string | string[]
-                if (bullet.bar.ranges.showType === 'dynamic') {
-                  name = isEmpty(formatter.chartShowName) ? formatter.name : formatter.chartShowName
-                  color = bullet.bar[key].fill
-                } else {
-                  const customRange = bullet.bar.ranges.fixedRange[index].name
-                  name = customRange
-                    ? customRange
-                    : isEmpty(formatter.chartShowName)
-                    ? formatter.name
-                    : formatter.chartShowName
-                  color = bullet.bar[key].fixedRange[index].fill
-                }
-                result.push({ ...originalItems[0], color, name, value })
-              })
             }
+            result.push({
+              color,
+              name,
+              value
+            })
           }
+        })
+        const ranges = data.ranges
+        ranges.forEach((range, index) => {
+          const value = isDynamic
+            ? valueFormatter(parseFloat(data.minRanges[0]), rangeFormatter.formatterCfg)
+            : (range as string)
+          let name = ''
+          let color: string | string[]
+          if (bullet.bar.ranges.showType === 'dynamic') {
+            name = isEmpty(rangeFormatter.chartShowName)
+              ? rangeFormatter.name
+              : rangeFormatter.chartShowName
+            color = bullet.bar['ranges'].fill
+          } else {
+            const customRange = bullet.bar.ranges.fixedRange[index].name
+            name = customRange
+              ? customRange
+              : isEmpty(rangeFormatter.chartShowName)
+              ? rangeFormatter.name
+              : rangeFormatter.chartShowName
+            color = bullet.bar['ranges'].fixedRange[index].fill
+          }
+          result.push({ ...originalItems[0], color, name, value })
         })
         const dynamicTooltipValue = chart.data.data.find(
           d => d.field === originalItems[0]['title']
@@ -455,6 +429,7 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
             }
           })
         }
+        result.sort((a, b) => (a.color === 'grey' ? 1 : b.color === 'grey' ? -1 : 0))
         return result
       },
       container: getTooltipContainer(`tooltip-${chart.id}`),
@@ -482,4 +457,68 @@ export class BulletGraph extends G2PlotChartView<G2BulletOptions, G2Bullet> {
       this.configTooltip
     )(chart, options, {}, this)
   }
+}
+
+/**
+ * 组装子弹图数据
+ * @param chart
+ */
+function mergeBulletData(chart): any[] {
+  // 先根据维度分组，再根据指标字段组装成子弹图的格式
+  const groupedData = chart.data.data.reduce((acc, item) => {
+    const field = item.field
+    if (!acc[field]) {
+      acc[field] = []
+    }
+    acc[field].push(item)
+    return acc
+  }, {})
+  const result = []
+  // 组装子弹图数据，每个维度对应一个子弹图
+  Object.keys(groupedData).forEach(field => {
+    const items = groupedData[field]
+    // 初始化子弹图条目结构
+    const entry = {
+      title: field,
+      ranges: [],
+      measures: [],
+      target: [],
+      dimensionList: items[0].dimensionList,
+      quotaList: []
+    }
+
+    // 防止指标相同时无数据有可能会导致数据不一致
+    items.forEach(item => {
+      const quotaId = item.quotaList[0]?.id
+      const v = item.value || 0
+      if (quotaId === chart.yAxis[0]?.id) {
+        entry.measures.push(v)
+      }
+      if (quotaId === chart.yAxisExt[0]?.id) {
+        entry.target.push(v)
+      }
+      if (quotaId === chart.extBubble[0]?.id) {
+        entry.ranges.push(v)
+      }
+      entry.quotaList.push(item.quotaList[0])
+    })
+    // 对数据进行累加
+    const ranges = chart.extBubble[0]?.id
+      ? [].concat(entry.ranges?.reduce((acc, curr) => acc + curr, 0))
+      : []
+    const target = [].concat(entry.target?.reduce((acc, curr) => acc + curr, 0))
+    const measures = [].concat(entry.measures?.reduce((acc, curr) => acc + curr, 0))
+    const bulletData = {
+      ...entry,
+      measures: measures,
+      target: target,
+      ranges: ranges,
+      quotaList: [...entry.quotaList],
+      minRanges: ranges,
+      originalRanges: ranges,
+      originalTarget: target
+    }
+    result.push(bulletData)
+  })
+  return result
 }

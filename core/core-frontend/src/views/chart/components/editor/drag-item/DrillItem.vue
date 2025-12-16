@@ -7,7 +7,6 @@ import icon_sort_outlined from '@/assets/svg/icon_sort_outlined.svg'
 import icon_right_outlined from '@/assets/svg/icon_right_outlined.svg'
 import icon_done_outlined from '@/assets/svg/icon_done_outlined.svg'
 import icon_edit_outlined from '@/assets/svg/icon_edit_outlined.svg'
-import icon_sort_priority from '@/assets/svg/icon_sort_priority.svg'
 import { useI18n } from '@/hooks/web/useI18n'
 import { onMounted, ref, toRefs, watch } from 'vue'
 import { getItemType } from '@/views/chart/components/editor/drag-item/utils'
@@ -165,7 +164,7 @@ onMounted(() => {
             ></Icon>
           </el-icon>
         </span>
-        <el-tooltip :effect="themes === 'dark' ? 'ndark' : 'dark'" placement="top">
+        <el-tooltip :effect="themes || 'dark'" placement="top">
           <template #content>
             <table>
               <tbody>
@@ -187,6 +186,7 @@ onMounted(() => {
             :class="{ 'sort-status': index !== 0 && item.sort !== 'none' }"
           >
             <span class="item-name">{{ item.chartShowName ? item.chartShowName : item.name }}</span>
+            <span :data-id="item.id" class="node-id_private"></span>
           </span>
         </el-tooltip>
         <el-icon class="child remove-icon" size="14px">
@@ -356,7 +356,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   background-color: #3370ff0a;
-  border: 1px solid var(--ed-color-primary);
+  border: 1px solid var(--ed-color-primary) !important;
 }
 
 .item-axis:hover {
@@ -450,9 +450,18 @@ span {
     background-color: rgba(31, 35, 41, 0.1);
   }
   &.dark-dimension-quota {
+    background-color: #292929;
+    border: 1px solid #434343;
+    :deep(.ed-dropdown-menu__item--divided) {
+      border-color: #ebebeb26;
+    }
     .inner-dropdown-menu {
       color: rgba(235, 235, 235, 1);
     }
+    :deep(.ed-dropdown-menu__item:not(.is-disabled):hover) {
+      background-color: #ebebeb1a;
+    }
+
     :deep(.ed-dropdown-menu__item) {
       color: rgba(235, 235, 235, 1);
     }
@@ -531,6 +540,7 @@ span {
   }
 }
 .dark-dimension-quota {
+  background-color: #292929;
   span {
     color: #ebebeb;
   }

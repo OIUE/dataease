@@ -16,19 +16,22 @@ import { TABLE_EDITOR_PROPERTY, TABLE_EDITOR_PROPERTY_INNER } from './common'
 import { useI18n } from '@/hooks/web/useI18n'
 import { filter, isEqual, isNumber, merge } from 'lodash-es'
 import {
+  calcTreeWidth,
+  calculateGroupHeaderHeight,
+  calculateHeaderHeight,
+  configEmptyDataStyle,
   copyContent,
   CustomDataCell,
   CustomTableColCell,
-  getRowIndex,
-  calculateHeaderHeight,
-  SortTooltip,
-  summaryRowStyle,
-  configEmptyDataStyle,
-  getLeafNodes,
-  getColumns,
   drawImage,
+  getColumns,
+  getLeafNodes,
+  getRowIndex,
+  getStartPosition,
   getSummaryRow,
-  SummaryCell
+  SortTooltip,
+  SummaryCell,
+  summaryRowStyle
 } from '@/views/chart/components/js/panel/common/common_table'
 
 const { t } = useI18n()
@@ -130,7 +133,8 @@ export class TableInfo extends S2ChartView<TableSheet> {
             formatCfg = formatterItem
           }
           return valueFormatter(value, formatCfg)
-        }
+        },
+        id: ele.id
       })
     })
     const { basicStyle, tableCell, tableHeader, tooltip } = parseJson(chart.customAttr)
@@ -179,7 +183,8 @@ export class TableInfo extends S2ChartView<TableSheet> {
         hoverHighlight: !(basicStyle.showHoverStyle === false),
         scrollbarPosition: newData.length
           ? ScrollbarPositionType.CONTENT
-          : ScrollbarPositionType.CANVAS
+          : ScrollbarPositionType.CANVAS,
+        hoverFocus: false
       }
     }
     s2Options.style = this.configStyle(chart, s2DataConfig)
@@ -233,28 +238,48 @@ export class TableInfo extends S2ChartView<TableSheet> {
     summaryRowStyle(newChart, newData, tableCell, tableHeader, basicStyle.showSummary)
     // 开启自动换行
     if (basicStyle.autoWrap && !tableCell.mergeCells) {
-      // 调整表头宽度时，计算表头高度
+      // 记录调整列宽的信息
+      const setResizeColWidthInfo = (info?) => {
+        newChart.store.set('resizeColWidthInfo', info ? info : undefined)
+      }
+      setResizeColWidthInfo()
+      // 计算分组表头的高度
+      newChart.on(S2Event.LAYOUT_BEFORE_RENDER, () => {
+        calculateGroupHeaderHeight(newChart, tableHeader, basicStyle)
+        setResizeColWidthInfo()
+      })
+      // 调整行高不能小于初始行高
+      newChart.on(S2Event.LAYOUT_RESIZE_COL_HEIGHT, info => {
+        if (info.info.resizedHeight < newChart.options.style.colCfg.height) {
+          info.style.colCfg.heightByField[info.info.id] = newChart.options.style.colCfg.height
+        }
+      })
+      // 调整表头单元格宽度时，计算表头高度
       newChart.on(S2Event.LAYOUT_RESIZE_COL_WIDTH, info => {
+        setResizeColWidthInfo(info.info)
         calculateHeaderHeight(info, newChart, tableHeader, basicStyle, null)
       })
       newChart.on(S2Event.LAYOUT_AFTER_HEADER_LAYOUT, (ev: LayoutResult) => {
-        const maxHeight = newChart.store.get('autoCalcHeight') as number
-        if (maxHeight) {
-          // 更新列的高度
-          ev.colLeafNodes.forEach(n => (n.height = maxHeight))
-          ev.colsHierarchy.height = maxHeight
-          newChart.store.set('autoCalcHeight', undefined)
-        } else {
-          if (ev.colLeafNodes?.length) {
-            const { value, width } = ev.colLeafNodes[0]
-            calculateHeaderHeight(
-              { info: { meta: { value }, resizedWidth: width } },
-              newChart,
-              tableHeader,
-              basicStyle,
-              ev
-            )
-          }
+        if (ev.colLeafNodes?.length) {
+          const { value, width } = ev.colLeafNodes[0]
+          calculateHeaderHeight(
+            { info: { meta: { value }, resizedWidth: width } },
+            newChart,
+            tableHeader,
+            basicStyle,
+            ev
+          )
+        }
+        if (tableHeader.headerGroup) {
+          const groupHeight = ev.colNodes.filter(node => node.colIndex === -1)?.[0]?.height || 0
+          ev.colsHierarchy.height =
+            ev.colsHierarchy.height + ev.colsHierarchy.maxLevel * groupHeight
+          ev.colLeafNodes.forEach(node => {
+            if (node.level < ev.colsHierarchy.maxLevel) {
+              const addHeight = ev.colsHierarchy.maxLevel - node.level
+              node.height = node.height + addHeight * groupHeight
+            }
+          })
         }
       })
     }
@@ -368,13 +393,13 @@ export class TableInfo extends S2ChartView<TableSheet> {
       newChart.on(S2Event.COL_CELL_HOVER, event => this.showTooltip(newChart, event, meta))
       newChart.on(S2Event.DATA_CELL_HOVER, event => this.showTooltip(newChart, event, meta))
       newChart.on(S2Event.MERGED_CELLS_HOVER, event => this.showTooltip(newChart, event, meta))
+      // touch
+      this.configTouchEvent(newChart, drawOption, meta)
     }
     // header resize
     newChart.on(S2Event.LAYOUT_RESIZE_COL_WIDTH, ev => resizeAction(ev))
     // right click
     newChart.on(S2Event.GLOBAL_CONTEXT_MENU, event => copyContent(newChart, event, meta))
-    // touch
-    this.configTouchEvent(newChart, drawOption, meta)
     // theme
     const customTheme = this.configTheme(chart)
     newChart.setThemeCfg({ theme: customTheme })
@@ -479,6 +504,16 @@ export class TableInfo extends S2ChartView<TableSheet> {
       const summaryObj = getSummaryRow(data, axis, basicStyle.seriesSummary) as any
       data.push(summaryObj)
     }
+    const { mergeCells } = tableCell
+    const mergedCellsInfoMap: Record<string, boolean> = {}
+    if (mergeCells) {
+      s2Options.mergedCellsInfo?.reduce((p, n) => {
+        n.forEach(cell => {
+          p[`${cell.rowIndex}-${cell.colIndex}`] = true
+        })
+        return p
+      }, mergedCellsInfoMap)
+    }
     s2Options.dataCell = viewMeta => {
       // 总计行处理
       if (showSummary && viewMeta.rowIndex === data.length - 1) {
@@ -509,6 +544,10 @@ export class TableInfo extends S2ChartView<TableSheet> {
       // 配置文本自动换行参数
       viewMeta.autoWrap = tableCell.mergeCells ? false : basicStyle.autoWrap
       viewMeta.maxLines = basicStyle.maxLines
+      // 合并单元格标记
+      if (mergeCells && mergedCellsInfoMap[`${viewMeta.rowIndex}-${viewMeta.colIndex}`]) {
+        viewMeta.isMergedCell = true
+      }
       return new CustomDataCell(viewMeta, viewMeta?.spreadsheet)
     }
   }
@@ -516,20 +555,4 @@ export class TableInfo extends S2ChartView<TableSheet> {
   constructor() {
     super('table-info', [])
   }
-}
-
-function calcTreeWidth(node) {
-  if (!node.children?.length) {
-    return node.width
-  }
-  return node.children.reduce((pre, cur) => {
-    return pre + calcTreeWidth(cur)
-  }, 0)
-}
-
-function getStartPosition(node) {
-  if (!node.children?.length) {
-    return node.x
-  }
-  return getStartPosition(node.children[0])
 }

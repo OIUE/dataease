@@ -41,7 +41,7 @@ const props = defineProps({
 const appearanceStore = useAppearanceStoreWithOut()
 const emit = defineEmits(['onTextChange'])
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 const predefineColors = COLOR_PANEL
 const fontFamily = CHART_FONT_FAMILY.concat(
@@ -132,6 +132,7 @@ watch(
       :disabled="!state.titleForm.show"
       :model="state.titleForm"
       label-position="top"
+      size="small"
     >
       <el-form-item
         :label="t('chart.title')"
@@ -202,7 +203,11 @@ watch(
           </el-tooltip>
         </el-form-item>
 
-        <el-form-item class="form-item" :class="'form-item-' + themes" style="padding-left: 4px">
+        <el-form-item
+          class="form-item"
+          :class="'form-item-' + themes"
+          style="width: 106px; padding-left: 4px"
+        >
           <el-select
             :effect="themes"
             v-model="state.titleForm.letterSpace"
@@ -210,7 +215,7 @@ watch(
             @change="changeTitleStyle('letterSpace')"
           >
             <template #prefix>
-              <el-icon>
+              <el-icon size="16">
                 <Icon name="icon_letter-spacing_outlined"
                   ><icon_letterSpacing_outlined class="svg-icon"
                 /></Icon>

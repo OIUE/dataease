@@ -1,22 +1,14 @@
 <script setup lang="ts">
 import { onMounted, PropType, reactive, watch, ref } from 'vue'
-import {
-  COLOR_PANEL,
-  DEFAULT_BASIC_STYLE,
-  DEFAULT_MISC
-} from '@/views/chart/components/editor/util/chart'
+import { DEFAULT_BASIC_STYLE, DEFAULT_MISC } from '@/views/chart/components/editor/util/chart'
 import { useI18n } from '@/hooks/web/useI18n'
 import CustomColorStyleSelect from '@/views/chart/components/editor/editor-style/components/CustomColorStyleSelect.vue'
 import { cloneDeep, defaultsDeep } from 'lodash-es'
-import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
-import { storeToRefs } from 'pinia'
 import {
   CHART_MIX_DEFAULT_BASIC_STYLE,
   MixChartBasicStyle
 } from '@/views/chart/components/js/panel/charts/others/chart-mix-common'
 
-const dvMainStore = dvMainStoreWithOut()
-const { batchOptStatus } = storeToRefs(dvMainStore)
 const { t } = useI18n()
 const props = defineProps({
   chart: {
@@ -33,7 +25,6 @@ const props = defineProps({
 })
 
 const showProperty = prop => props.propertyInner?.includes(prop)
-const predefineColors = COLOR_PANEL
 const state = reactive({
   basicStyleForm: JSON.parse(JSON.stringify(CHART_MIX_DEFAULT_BASIC_STYLE)) as MixChartBasicStyle,
   miscForm: JSON.parse(JSON.stringify(DEFAULT_MISC)) as ChartMiscAttr,
@@ -128,6 +119,12 @@ const init = () => {
     state.customColor = state.basicStyleForm.colors[0]
     state.colorIndex = 0
   }
+  if (
+    props.chart.type.includes('-stack') &&
+    state.basicStyleForm.radiusColumnBar === 'topRoundAngle'
+  ) {
+    state.basicStyleForm.radiusColumnBar = 'roundAngle'
+  }
 }
 const configCompat = (basicStyle: ChartBasicStyle) => {
   // 悬浮改为图例和缩放按钮
@@ -149,7 +146,7 @@ onMounted(() => {
 })
 </script>
 <template>
-  <div style="width: 100%">
+  <el-form size="small" style="width: 100%">
     <el-tabs v-model="activeName" id="axis-tabs" stretch>
       <el-tab-pane :label="t('chart.yAxisLeft')" name="left">
         <template v-if="showProperty('colors')">
@@ -224,9 +221,17 @@ onMounted(() => {
               :effect="themes"
               v-model="state.basicStyleForm.radiusColumnBar"
               @change="changeBasicStyle('radiusColumnBar')"
+              class="radius-class"
             >
               <el-radio label="rightAngle" :effect="themes">{{ t('chart.rightAngle') }}</el-radio>
               <el-radio label="roundAngle" :effect="themes">{{ t('chart.roundAngle') }}</el-radio>
+              <el-radio
+                v-if="!props.chart.type.includes('-stack')"
+                label="topRoundAngle"
+                :effect="themes"
+              >
+                {{ t('chart.topRoundAngle') }}</el-radio
+              >
             </el-radio-group>
           </el-form-item>
           <div class="alpha-setting" v-if="showProperty('columnWidthRatio')">
@@ -462,7 +467,7 @@ onMounted(() => {
         </el-form-item>
       </el-tab-pane>
     </el-tabs>
-  </div>
+  </el-form>
 </template>
 <style scoped lang="less">
 .form-item {
@@ -550,6 +555,14 @@ onMounted(() => {
 
   :deep(.ed-tabs__header) {
     border-top: none !important;
+  }
+}
+.radius-class {
+  :deep(.ed-radio) {
+    margin-right: 30px !important;
+  }
+  .ed-radio:last-child {
+    margin-right: 0px !important;
   }
 }
 </style>

@@ -42,7 +42,12 @@ import {
   qqMapStyleOptions,
   tdtMapStyleOptions
 } from '@/views/chart/components/js/panel/charts/map/common'
-import ChartCarouselTooltip from '@/views/chart/components/js/g2plot_tooltip_carousel'
+import ChartCarouselTooltip, {
+  isPie,
+  isColumn,
+  isMix,
+  isSupport
+} from '@/views/chart/components/js/g2plot_tooltip_carousel'
 
 const { t: tI18n } = useI18n()
 
@@ -146,15 +151,17 @@ export function getTheme(chart: Chart) {
           'g2-tooltip-list-item': {
             display: 'flex',
             'align-items': 'flex-start',
+            'justify-content': 'space-between',
             'line-height': tooltipFontsize + 'px'
           },
           'g2-tooltip-name': {
             display: 'inline-block',
-            'line-height': tooltipFontsize + 'px',
-            flex: 1
+            'line-height': tooltipFontsize + 'px'
           },
           'g2-tooltip-value': {
+            flex: 1,
             display: 'inline-block',
+            'text-align': 'end',
             'line-height': tooltipFontsize + 'px'
           },
           'g2-tooltip-marker': {
@@ -483,12 +490,8 @@ export function getXAxis(chart: Chart) {
               style: {
                 fill: a.axisLabel.color,
                 fontSize: a.axisLabel.fontSize,
-                textAlign: textAlign
-              },
-              formatter: value => {
-                return chart.type === 'bidirectional-bar' && value.length > a.axisLabel.lengthLimit
-                  ? value.substring(0, a.axisLabel.lengthLimit) + '...'
-                  : value
+                textAlign: textAlign,
+                fontFamily: chart.fontFamily
               }
             }
           : null
@@ -588,7 +591,8 @@ export function getYAxis(chart: Chart) {
           fill: yAxis.axisLabel.color,
           fontSize: yAxis.axisLabel.fontSize,
           textBaseline,
-          textAlign
+          textAlign,
+          fontFamily: chart.fontFamily
         },
         formatter: value => {
           return value.length > yAxis.axisLabel.lengthLimit
@@ -689,7 +693,8 @@ export function getYAxisExt(chart: Chart) {
           fill: yAxis.axisLabel.color,
           fontSize: yAxis.axisLabel.fontSize,
           textBaseline,
-          textAlign
+          textAlign,
+          fontFamily: chart.fontFamily
         }
       }
     : null
@@ -837,10 +842,9 @@ export function getAnalyseHorizontal(chart: Chart) {
   const assistLineArr = senior.assistLineCfg.assistLine
   if (assistLineArr?.length > 0) {
     const customStyle = parseJson(chart.customStyle)
-    let xAxisPosition, axisFormatterCfg
+    let axisFormatterCfg
     if (customStyle.xAxis) {
       const a = JSON.parse(JSON.stringify(customStyle.xAxis))
-      xAxisPosition = transAxisPosition(a.position)
       axisFormatterCfg = a.axisLabelFormatter
         ? a.axisLabelFormatter
         : DEFAULT_XAXIS_STYLE.axisLabelFormatter
@@ -1173,13 +1177,27 @@ export class CustomZoom extends Zoom {
       'l7-button-control',
       container,
       () => {
-        if (this.controlOption['bounds']) {
-          this.mapsService.fitBounds(this.controlOption['bounds'], { animate: true })
+        if (this.mapsService.map?.deMapProvider == 'qq') {
+          if (this.mapsService.map.deMapAutoFit) {
+            this.mapsService.setZoomAndCenter(this.mapsService.map.deMapAutoZoom, [
+              this.mapsService.map.deMapAutoLng,
+              this.mapsService.map.deMapAutoLat
+            ])
+          } else {
+            this.mapsService.setZoomAndCenter(
+              this.controlOption['initZoom'],
+              this.controlOption['center']
+            )
+          }
         } else {
-          this.mapsService.setZoomAndCenter(
-            this.controlOption['initZoom'],
-            this.controlOption['center']
-          )
+          if (this.controlOption['bounds']) {
+            this.mapsService.fitBounds(this.controlOption['bounds'], { animate: true })
+          } else {
+            this.mapsService.setZoomAndCenter(
+              this.controlOption['initZoom'],
+              this.controlOption['center']
+            )
+          }
         }
       }
     )
@@ -1370,6 +1388,13 @@ export function calculateBounds(coordinates: number[][]): {
 export function configL7PlotZoom(chart: Chart, plot: L7Plot<PlotOptions>) {
   const { basicStyle } = parseJson(chart.customAttr)
   if (shouldHideZoom(basicStyle)) {
+    // amap
+    plot.scene.map['zoomEnable']?.disable()
+    plot.scene.map['dragEnable']?.disable()
+    // mapbox
+    plot.scene.map['dragPan']?.disable()
+    plot.scene.map['scrollZoom']?.disable()
+    plot.scene.map['doubleClickZoom']?.disable()
     return
   }
   plot.once('loaded', () => {
@@ -1394,6 +1419,18 @@ export function mapRendering(dom: HTMLElement | string) {
     dom = document.getElementById(dom)
   }
   dom.classList.add('de-map-rendering')
+}
+
+export function qqMapRendered(scene?: Scene) {
+  if (scene?.map && scene.map.deMapProvider === 'qq') {
+    setTimeout(() => {
+      if (scene.map) {
+        scene.map.deMapAutoZoom = scene.map.getZoom()
+        scene.map.deMapAutoLng = scene.map.getCenter().getLng()
+        scene.map.deMapAutoLat = scene.map.getCenter().getLat()
+      }
+    }, 1000)
+  }
 }
 
 export function mapRendered(dom: HTMLElement | string) {
@@ -1498,6 +1535,11 @@ export async function getMapScene(
     }
     if (basicStyle.autoFit === false) {
       scene.setZoomAndCenter(basicStyle.zoomLevel, center)
+      if (mapKey.mapType === 'qq') {
+        scene.map.deMapAutoFit = false
+        scene.map.deMapZoom = basicStyle.zoomLevel
+        scene.map.deMapCenter = center
+      }
     }
   }
   mapRendering(container)
@@ -1511,6 +1553,12 @@ export async function getMapScene(
         //仅渲染：道路及底面(base) + 2d建筑物(building2d)，以达到隐藏文字的效果
       })
       scene.setMapStyle(mapStyle)
+
+      scene.map.deMapProvider = 'qq'
+      scene.map.deMapAutoFit = !!basicStyle.autoFit
+      // scene.map.deMapAutoZoom = scene.map.getZoom()
+      // scene.map.deMapAutoLng = scene.map.getCenter().getLng()
+      // scene.map.deMapAutoLat = scene.map.getCenter().getLat()
     }
     // 去除天地图自己的缩放按钮
     if (mapKey.mapType === 'tianditu') {
@@ -1657,15 +1705,63 @@ export function getTooltipContainer(id) {
  * @param chart
  */
 function configCarouselTooltip(plot, chart) {
-  // 启用轮播
-  plot.once('afterrender', () => {
-    const carousel = chart.customAttr?.tooltip?.carousel
-    ChartCarouselTooltip.manage(plot, chart, {
-      xField: 'field',
-      duration: carousel.enable ? carousel?.stayTime * 1000 : 2000,
-      interval: carousel.enable ? carousel?.intervalTime * 1000 : 2000
+  const senior = parseJson(chart.senior)
+  if (senior.functionCfg) {
+    if (senior.functionCfg.sliderShow) {
+      return
+    }
+  }
+  const start = isSupport(chart.type) && !document.getElementById('multiplexingDrawer')
+  if (start) {
+    // 启用轮播
+    plot.once('afterrender', () => {
+      const carousel = chart.customAttr?.tooltip?.carousel
+      ChartCarouselTooltip.manage(plot, chart, {
+        xField: 'field',
+        duration: carousel.enable ? carousel?.stayTime * 1000 : 2000,
+        interval: carousel.enable ? carousel?.intervalTime * 1000 : 2000
+      })
     })
-  })
+  }
+}
+/**
+ * 计算 Tooltip 的位置
+ * @param {Chart} chart - 图表实例
+ * @param {boolean} isCarousel - 是否为轮播模式
+ * @param {object} tooltipCtl - Tooltip 控制器
+ * @param {HTMLElement} chartElement - 图表元素
+ * @param {Event} event - 事件对象
+ * @param {boolean} enlargeElement - 放大弹窗
+ * @returns {{x: number, y: number}} - 计算后的 x 和 y 坐标
+ */
+function calculateTooltipPosition(chart, isCarousel, tooltipCtl, chartElement, event) {
+  // 辅助函数: 根据不同图表类型计算 Tooltip 的y位置
+  const getTooltipY = () => {
+    const top = Number(chartElement.getBoundingClientRect().top)
+    if (isColumn(chart.type)) {
+      return top + chartElement.getBoundingClientRect().height / 2
+    }
+    if (isMix(chart.type) || isPie(chart.type)) {
+      return top + tooltipCtl.point.y
+    }
+    return top + tooltipCtl.point.y + 60
+  }
+  if (isCarousel) {
+    return {
+      x: tooltipCtl.point.x + Number(chartElement.getBoundingClientRect().left),
+      y: getTooltipY()
+    }
+  } else {
+    return { x: event.clientX, y: event.clientY }
+  }
+}
+const getChartElements = chart => {
+  return (
+    document.getElementById('container-viewDialog-' + chart.id + '-common') ||
+    document.getElementById('container-preview-' + chart.id + '-common') ||
+    document.getElementById('enlarge-inner-content-' + chart.id) ||
+    document.getElementById('shape-id-' + chart.id)
+  )
 }
 export function configPlotTooltipEvent<O extends PickOptions, P extends Plot<O>>(
   chart: Chart,
@@ -1677,7 +1773,12 @@ export function configPlotTooltipEvent<O extends PickOptions, P extends Plot<O>>
     return
   }
   // 图表容器，用于计算 tooltip 的位置
-  const chartElement = document.getElementById('shape-id-' + chart.id)
+  // 获取图表元素，优先顺序：放大 > 预览 > 公共连接页面 > 默认
+  let chartElement = getChartElements(chart)
+  // 是否是放大弹窗
+  const enlargeElement = chartElement?.id.includes('viewDialog')
+  // 轮播时tooltip的zIndex
+  const carousel_zIndex = enlargeElement ? '9999' : '1002'
   configCarouselTooltip(plot, chart)
   // 鼠标可移入, 移入之后保持显示, 移出之后隐藏
   plot.options.tooltip.container.addEventListener('mouseenter', e => {
@@ -1690,15 +1791,34 @@ export function configPlotTooltipEvent<O extends PickOptions, P extends Plot<O>>
   })
   // 手动处理 tooltip 的显示和隐藏事件，需配合源码理解
   // https://github.com/antvis/G2/blob/master/src/chart/controller/tooltip.ts#showTooltip
-  plot.on('tooltip:show', _d => {
+  plot.on('tooltip:show', () => {
     const tooltipCtl = plot.chart.getController('tooltip')
     if (!tooltipCtl) {
       return
     }
+    const tooltipInstance = ChartCarouselTooltip.getInstanceByContainer(chart.container)
+    if (tooltipInstance && tooltipInstance.hasParentWithSwitchHidden(plot.chart.ele)) {
+      return
+    }
+    // 处理 tooltip 与下拉菜单的显示冲突问题
+    const viewTrackBarElement = document.getElementById('view-track-bar-' + chart.id)
     const event = plot.chart.interactions.tooltip?.context?.event
+    // 是否时轮播模式
+    const isCarousel =
+      chart.customAttr?.tooltip?.carousel &&
+      (!event || // 事件触发时，使用event的client坐标
+        ['plot:leave', 'plot:mouseleave'].includes(event?.type) || //鼠标离开时，使用tooltipCtl.point
+        ['pie', 'pie-rose', 'pie-donut'].includes(chart.type)) // 饼图时，使用tooltipCtl.point
+    plot.options.tooltip.showMarkers = isCarousel ? true : false
+    const wrapperDom = document.getElementById(G2_TOOLTIP_WRAPPER)
+    wrapperDom.style.zIndex = isCarousel && wrapperDom ? carousel_zIndex : '9999'
     if (tooltipCtl.tooltip) {
       // 处理视图放大后再关闭 tooltip 的 dom 被清除
       const container = tooltipCtl.tooltip.cfg.container
+      // 当下拉菜单不显示时，移除tooltip的hidden-tooltip样式
+      if (viewTrackBarElement?.getAttribute('aria-expanded') === 'false') {
+        container.classList.toggle('hidden-tooltip', false)
+      }
       container.style.display = 'block'
       const dom = document.getElementById(container.id)
       if (!dom) {
@@ -1714,18 +1834,8 @@ export function configPlotTooltipEvent<O extends PickOptions, P extends Plot<O>>
     plot.chart.getOptions().tooltip.follow = false
     tooltipCtl.title = Math.random().toString()
     // 当显示提示为事件触发时，使用event的client坐标，否则使用tooltipCtl.point 数据点的位置，在图表中，需要加上图表在绘制区的位置
-    const { x, y } =
-      !event ||
-      event?.type === 'plot:leave' ||
-      ['pie', 'pie-rose', 'pie-donut'].includes(chart.type)
-        ? {
-            x: tooltipCtl.point.x + Number(chartElement.getBoundingClientRect().left),
-            y:
-              60 +
-              Number(chartElement.getBoundingClientRect().top) +
-              Number(chartElement.style.height.split('px')[0]) / 2
-          }
-        : { x: event.clientX, y: event.clientY }
+    chartElement = getChartElements(chart)
+    const { x, y } = calculateTooltipPosition(chart, isCarousel, tooltipCtl, chartElement, event)
     plot.chart.getTheme().components.tooltip.x = x
     plot.chart.getTheme().components.tooltip.y = y
   })
@@ -1839,9 +1949,9 @@ const AXIS_LABEL_TOOLTIP_STYLE = {
 }
 const AXIS_LABEL_TOOLTIP_TPL =
   '<div class="g2-axis-label-tooltip">' + '<div class="g2-tooltip-title">{title}</div>' + '</div>'
-export function configAxisLabelLengthLimit(chart, plot, triggerObjName) {
+export function configAxisLabelLengthLimit(chart, plot, triggerObjName = 'axis-label') {
   // 设置触发事件的名称，如果未传入，则默认为 'axis-label'
-  const triggerName = triggerObjName || 'axis-label'
+  const triggerName = triggerObjName
 
   // 判断是否是Y轴标题
   const isYaxisTitle = triggerName === 'axis-title'
@@ -2000,10 +2110,12 @@ export function configYaxisTitleLengthLimit(chart, plot) {
           ? wrappedTitle.slice(0, wrappedTitle.length - 2) + '...'
           : wrappedTitle + '...'
     }
-
     // 更新Y轴标题的原始文本和截断后的文本
-    ev.view.options.axes.yAxisExt.title.originalText = yAxis.name
-    ev.view.options.axes.yAxisExt.title.text = wrappedTitle
+    const { title } = ev.view.options.axes.yAxisExt
+    if (title) {
+      title.originalText = yAxis.name
+      title.text = wrappedTitle
+    }
   })
 }
 
@@ -2032,7 +2144,7 @@ export const addConditionsStyleColorToData = (chart: Chart, options) => {
       })
     } else if (item.quotaList?.length) {
       const quotaList = item.quotaList.map(q => q.id) ?? []
-      quotaList.forEach((q, index) => {
+      quotaList.forEach(q => {
         // 定义后，在 handleConditionsStyle 函数中使用
         let currentValue = item[valueField]
         if (chart.type === 'progress-bar') {
@@ -2099,7 +2211,7 @@ const getColorByConditions = (quotaList: [], values: number | number[], chart) =
  * @param chart
  * @param options
  */
-export function handleConditionsStyle(chart: Chart, options: O) {
+export function handleConditionsStyle(chart: Chart, options) {
   const { threshold } = parseJson(chart.senior)
   if (!threshold.enable) return options
   const { basicStyle } = parseJson(chart.customAttr)
@@ -2111,8 +2223,6 @@ export function handleConditionsStyle(chart: Chart, options: O) {
   // 辅助函数：配置柱条样式颜色，条形图为barStyle,柱形图为columnStyle
   const columnStyle = data => {
     return {
-      ...options.columnStyle,
-      ...options.barStyle,
       ...(data[colorField]?.[0] ? { fill: data[colorField][0] } : {})
     }
   }
@@ -2123,26 +2233,23 @@ export function handleConditionsStyle(chart: Chart, options: O) {
   } else if (chart.type === 'waterfall') {
     newColor = getWaterfallColor(basicStyle, chart)
   }
+  const tooltip = options.tooltip
+  if (tooltip && !tooltip.customItems) {
+    options.tooltip.customItems = originalItems => {
+      originalItems.forEach(item => {
+        if (item.data?.[colorField]) {
+          item.color = item.data[colorField][0]
+        }
+      })
+      return originalItems
+    }
+  }
   const tmpOption = {
     ...options,
     rawFields,
-    columnStyle: columnStyle,
-    barStyle: columnStyle,
-    tooltip: {
-      ...options.tooltip,
-      ...(options.tooltip['customItems']
-        ? {}
-        : {
-            customItems: originalItems => {
-              originalItems.forEach(item => {
-                if (item.data?.[colorField]) {
-                  item.color = item.data[colorField][0]
-                }
-              })
-              return originalItems
-            }
-          })
-    },
+    ...configRoundAngle(chart, 'columnStyle', columnStyle),
+    ...configRoundAngle(chart, 'barStyle', columnStyle),
+    tooltip,
     ...(newColor ? { color: newColor } : {})
   }
   return tmpOption
@@ -2246,8 +2353,8 @@ export const configEmptyDataStyle = (newData, container, newChart?, content?) =>
     }
   }
   removeEmptyDom()
-  if (newData.length > 0) return
-  if (!newData.length) {
+  if (newData?.length > 0) return
+  if (!newData?.length) {
     const emptyDom = document.createElement('div')
     emptyDom.id = container + '_empty'
     emptyDom.textContent = content || tI18n('data_set.no_data')
@@ -2287,4 +2394,84 @@ export const numberToChineseUnderHundred = (num: number): string => {
 
   // 处理其他两位数
   return tens === 1 ? '十' + digits[ones] : digits[tens] + '十' + digits[ones]
+}
+
+/**
+ * 配置柱条图的圆角
+ * @param styleName
+ * @param callBack 自定义其他属性函数
+ */
+export const configRoundAngle = (chart: Chart, styleName: string, callBack?: (datum) => {}) => {
+  const { basicStyle } = parseJson(chart.customAttr)
+  if (['roundAngle', 'topRoundAngle'].includes(basicStyle.radiusColumnBar)) {
+    const radius = Array(2).fill(basicStyle.columnBarRightAngleRadius)
+    const topRadius = [0, 0, ...radius]
+    const bottomRadius = [...radius, 0, 0]
+    const finalRadius = [...radius, ...radius]
+    if (chart.type.includes('-stack')) {
+      return {
+        [styleName]: datum => {
+          if (!datum.value) return { radius: [], ...(callBack ? callBack(datum) : {}) }
+          return { radius: finalRadius, ...(callBack ? callBack(datum) : {}) }
+        }
+      }
+    }
+    const isTopRound = basicStyle.radiusColumnBar === 'topRoundAngle'
+    // 对称条形图
+    if (chart.type === 'bidirectional-bar') {
+      const valueField = basicStyle.layout === 'vertical' ? 'valueExt' : 'value'
+      return {
+        [styleName]: datum => ({
+          radius: datum[valueField] && isTopRound ? topRadius : isTopRound ? radius : finalRadius,
+          ...(callBack ? callBack(datum) : {})
+        })
+      }
+    }
+    // 进度条
+    if (chart.type === 'progress-bar') {
+      return {
+        [styleName]: datum => {
+          return {
+            radius: isTopRound ? bottomRadius : finalRadius,
+            ...(callBack ? callBack(datum) : {})
+          }
+        }
+      }
+    }
+    // 区间条形图
+    if (chart.type === 'bar-range') {
+      return {
+        [styleName]: datum => {
+          return {
+            radius:
+              datum?.values[0] < datum?.values[1]
+                ? isTopRound
+                  ? bottomRadius
+                  : finalRadius
+                : isTopRound
+                ? topRadius
+                : finalRadius,
+            ...(callBack ? callBack(datum) : {})
+          }
+        }
+      }
+    }
+    // 配置柱条样式
+    const style = datum => {
+      if (isTopRound) {
+        return { radius, ...(callBack ? callBack(datum) : {}) }
+      }
+      if (!isTopRound) {
+        return { radius: finalRadius, ...(callBack ? callBack(datum) : {}) }
+      }
+    }
+    return {
+      [styleName]: style
+    }
+  }
+  return {
+    [styleName]: datum => {
+      return { ...(callBack ? callBack(datum) : {}) }
+    }
+  }
 }

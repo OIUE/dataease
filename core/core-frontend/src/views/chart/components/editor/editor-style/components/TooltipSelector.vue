@@ -45,7 +45,7 @@ const dvMainStore = dvMainStoreWithOut()
 const { batchOptStatus, mobileInPc } = storeToRefs(dvMainStore)
 const predefineColors = COLOR_PANEL
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 const emit = defineEmits(['onTooltipChange', 'onExtTooltipChange'])
 const curSeriesFormatter = ref<DeepPartial<SeriesFormatter>>({})
@@ -86,6 +86,9 @@ const changeChartType = () => {
       })
     }
   })
+  if (formatter[0]) {
+    curSeriesFormatter.value = formatter[0]
+  }
   emit('onTooltipChange', { data: state.tooltipForm, render: false }, 'seriesTooltipFormatter')
   emit('onExtTooltipChange', extTooltip.value)
 }
@@ -109,6 +112,9 @@ const changeDataset = () => {
       })
     }
   })
+  if (formatter[0]) {
+    curSeriesFormatter.value = formatter[0]
+  }
 }
 
 const AXIS_PROP: AxisType[] = ['yAxis', 'yAxisExt', 'extBubble']
@@ -271,6 +277,9 @@ const init = () => {
       }, {})
       if (!curSeriesFormatter?.value || !seriesAxisMap[curSeriesFormatter.value?.seriesId]) {
         curSeriesFormatter.value = {}
+        if (formatter[0]) {
+          curSeriesFormatter.value = formatter[0]
+        }
       } else {
         curSeriesFormatter.value = seriesAxisMap[curSeriesFormatter.value?.seriesId]
       }
@@ -447,6 +456,9 @@ watch(
     }
   }
 )
+const showTotalPercent = computed(() => {
+  return props.chart.type === 'sankey'
+})
 onMounted(() => {
   init()
   useEmitt({ name: 'addAxis', callback: updateSeriesTooltipFormatter })
@@ -463,6 +475,7 @@ onMounted(() => {
     :disabled="!state.tooltipForm.show"
     :model="state.tooltipForm"
     label-position="top"
+    size="small"
   >
     <el-form-item
       :label="t('chart.background') + t('chart.color')"
@@ -477,6 +490,7 @@ onMounted(() => {
         @change="changeTooltipAttr('backgroundColor')"
         is-custom
         :trigger-width="108"
+        show-alpha
       />
     </el-form-item>
     <el-space>
@@ -645,7 +659,7 @@ onMounted(() => {
                 v-model="state.tooltipForm.tooltipFormatter.unit"
                 :placeholder="t('chart.pls_select_field')"
                 size="small"
-                @change="changeTooltipAttr('tooltipFormatter.unit')"
+                @change="changeTooltipAttr('tooltipFormatter')"
               >
                 <el-option
                   v-for="item in getUnitTypeList(state.tooltipForm.tooltipFormatter.unitLanguage)"
@@ -684,6 +698,15 @@ onMounted(() => {
           v-model="state.tooltipForm.tooltipFormatter.thousandSeparator"
           @change="changeTooltipAttr('tooltipFormatter.thousandSeparator')"
           :label="t('chart.value_formatter_thousand_separator')"
+        />
+      </el-form-item>
+      <el-form-item v-if="showTotalPercent" class="form-item" :class="'form-item-' + themes">
+        <el-checkbox
+          size="small"
+          :effect="props.themes"
+          v-model="state.tooltipForm.tooltipFormatter.showTotalPercent"
+          @change="changeTooltipAttr('tooltipFormatter.showTotalPercent')"
+          :label="t('chart.value_formatter_total_out_percent')"
         />
       </el-form-item>
     </template>
@@ -949,7 +972,8 @@ onMounted(() => {
               :effect="themes"
               controls-position="right"
               size="middle"
-              :min="0"
+              precision="0"
+              :min="1"
               :max="600"
               :disabled="!state.tooltipForm.carousel.enable"
               @change="changeTooltipAttr('carousel')"
@@ -968,7 +992,8 @@ onMounted(() => {
               :effect="themes"
               controls-position="right"
               size="middle"
-              :min="0"
+              precision="0"
+              :min="1"
               :max="600"
               :disabled="!state.tooltipForm.carousel.enable"
               @change="changeTooltipAttr('carousel')"
@@ -983,13 +1008,8 @@ onMounted(() => {
 
 <style lang="less" scoped>
 .series-select {
-  :deep(.ed-select__prefix--light) {
-    padding-right: unset;
-    border-right: unset;
-  }
-  :deep(.ed-select__prefix--dark) {
-    padding-right: unset;
-    border-right: unset;
+  :deep(.ed-select__prefix::after) {
+    display: none;
   }
 }
 

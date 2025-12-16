@@ -14,7 +14,7 @@ const composeStore = composeStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
 const copyStore = copyStoreWithOut()
 const lockStore = lockStoreWithOut()
-const { curComponent, isInEditor, editMode } = storeToRefs(dvMainStore)
+const { curComponent, editMode } = storeToRefs(dvMainStore)
 const { areaData } = storeToRefs(composeStore)
 
 const ctrlKey = 17,
@@ -88,7 +88,10 @@ const checkDialog = () => {
     }
   })
   document.querySelectorAll('.ed-popper').forEach(element => {
-    if (window.getComputedStyle(element).getPropertyValue('display') != 'none') {
+    if (
+      !element.classList?.contains('template-popper-tips') &&
+      window.getComputedStyle(element).getPropertyValue('display') != 'none'
+    ) {
       haveDialog = true
     }
   })

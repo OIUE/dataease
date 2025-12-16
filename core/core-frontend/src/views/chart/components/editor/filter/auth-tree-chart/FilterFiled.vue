@@ -15,6 +15,7 @@ import {
   sysParamsIlns,
   fieldEnums
 } from '@/views/visualized/data/dataset/options.js'
+import TimeSetDialog from '@/components/time-set-dialog/index.vue'
 import { iconFieldMap } from '@/components/icon-group/field-list'
 export interface Item {
   term: string
@@ -27,6 +28,7 @@ export interface Item {
   filterTypeTime?: string
   timeValue: string
   dynamicTimeSetting?: SelectConfig
+  timeType?: string
 }
 
 type Props = {
@@ -432,6 +434,17 @@ const addFields = () => {
   showTextArea.value = false
 }
 
+const timeDialogRef = ref()
+const showTimeDialog = (obj: any) => {
+  if (obj.deType !== 1) return
+  timeDialogRef.value.init(obj.timeType, obj.value)
+}
+
+const saveTime = (type, value) => {
+  item.value.timeType = type
+  item.value.value = value
+}
+
 const emits = defineEmits(['update:item', 'del'])
 </script>
 
@@ -493,6 +506,7 @@ const emits = defineEmits(['update:item', 'del'])
           <span class="filed-title">{{ t('auth.screen_method') }}</span>
           <el-select
             size="small"
+            class="w181"
             @change="filterTypeChange"
             v-model="item.filterType"
             :placeholder="t('auth.select')"
@@ -588,6 +602,19 @@ const emits = defineEmits(['update:item', 'del'])
                 class="w70 mar5"
                 size="small"
                 v-model="item.timeValue"
+            /></el-tooltip>
+            <el-tooltip
+              class="item"
+              v-else-if="item.deType === 1 && item.filterTypeTime !== 'dynamicDate'"
+              effect="light"
+              :content="item.value"
+              placement="top"
+              ><el-input
+                readonly
+                @click="showTimeDialog(item)"
+                class="w70 mar5"
+                size="small"
+                v-model="item.value"
             /></el-tooltip>
             <el-input v-else class="w70 mar5" size="small" v-model="item.value" />
             <div class="bottom-line"></div>
@@ -708,6 +735,7 @@ const emits = defineEmits(['update:item', 'del'])
       </template>
     </el-dialog>
   </div>
+  <TimeSetDialog @saveTime="saveTime" ref="timeDialogRef"></TimeSetDialog>
 </template>
 
 <style lang="less" scoped>
@@ -755,11 +783,15 @@ const emits = defineEmits(['update:item', 'del'])
   }
 
   .w100.ed-select {
-    width: 100px;
+    width: 100px !important;
+  }
+
+  .w181.ed-select {
+    width: 181px !important;
   }
 
   .w70 {
-    width: 70px;
+    width: 70px !important;
   }
 
   .mar5 {
@@ -844,11 +876,12 @@ const emits = defineEmits(['update:item', 'del'])
     }
   }
 
-  :deep(.ed-input__wrapper) {
+  :deep(.ed-input__wrapper),
+  :deep(.ed-select__wrapper) {
     background-color: #f8f8fa;
     border: none;
     border-radius: 0;
-    box-shadow: none;
+    box-shadow: none !important;
     height: 26px;
     font-family: var(--de-custom_font, 'PingFang');
     word-wrap: break-word;
@@ -1078,9 +1111,9 @@ const emits = defineEmits(['update:item', 'del'])
           line-height: 26px;
           border-radius: 4px;
           padding: 0 4px;
-          color: #3370ff;
+          color: var(--ed-color-primary, #3370ff);
           &:hover {
-            background-color: #3370ff1a;
+            background-color: var(--ed-color-primary-1a, #3370ff1a);
           }
         }
       }

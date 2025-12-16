@@ -16,7 +16,6 @@ import {
 } from 'vue'
 import { getData } from '@/api/chart'
 import chartViewManager from '@/views/chart/components/js/panel'
-import { useAppStoreWithOut } from '@/store/modules/app'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import ViewTrackBar from '@/components/visualization/ViewTrackBar.vue'
 import { storeToRefs } from 'pinia'
@@ -134,17 +133,20 @@ let chartData = shallowRef<Partial<Chart['data']>>({
 const containerId = 'container-' + showPosition.value + '-' + view.value.id + '-' + suffixId.value
 const viewTrack = ref(null)
 
-const calcData = (view: Chart, callback, resetPageInfo = true) => {
-  if (view.customAttr.basicStyle.tablePageStyle === 'general') {
+const calcData = (viewInfo: Chart, callback, resetPageInfo = true) => {
+  if (viewInfo.customAttr.basicStyle.tablePageStyle === 'general') {
     if (state.currentPageSize !== 0) {
-      view.chartExtRequest.pageSize = state.currentPageSize
+      viewInfo.chartExtRequest.pageSize = state.currentPageSize
+      state.pageInfo.pageSize = state.currentPageSize
+    } else {
+      viewInfo.chartExtRequest.pageSize = state.pageInfo.pageSize
     }
   } else {
-    delete view.chartExtRequest.pageSize
+    delete viewInfo.chartExtRequest?.pageSize
   }
-  if (view.tableId || view['dataFrom'] === 'template') {
+  if (viewInfo.tableId || viewInfo['dataFrom'] === 'template') {
     isError.value = false
-    const v = JSON.parse(JSON.stringify(view))
+    const v = JSON.parse(JSON.stringify(viewInfo))
     getData(v)
       .then(res => {
         if (res.code && res.code !== 0) {
@@ -153,7 +155,7 @@ const calcData = (view: Chart, callback, resetPageInfo = true) => {
         } else {
           chartData.value = res?.data as Partial<Chart['data']>
           state.totalItems = res?.totalItems
-          dvMainStore.setViewDataDetails(view.id, res)
+          dvMainStore.setViewDataDetails(viewInfo.id, res)
           emit('onDrillFilters', res?.drillFilters)
           renderChart(res as unknown as Chart, resetPageInfo)
         }
@@ -224,7 +226,7 @@ const renderChart = (viewInfo: Chart, resetPageInfo: boolean) => {
   nextTick(() => debounceRender(resetPageInfo))
 }
 
-const debounceRender = debounce(resetPageInfo => {
+const debounceRender = debounce(() => {
   myChart?.facet?.timer?.stop()
   myChart?.facet?.cancelScrollFrame()
   myChart?.destroy()
@@ -255,13 +257,7 @@ const setupPage = (chart: ChartObj, resetPageInfo?: boolean) => {
   }
   const pageInfo = state.pageInfo
   state.pageStyle = customAttr.basicStyle.tablePageStyle
-  if (state.pageStyle === 'general') {
-    if (state.currentPageSize === 0) {
-      state.currentPageSize = pageInfo.pageSize
-    } else {
-      pageInfo.pageSize = state.currentPageSize
-    }
-  } else {
+  if (state.pageStyle !== 'general') {
     pageInfo.pageSize = customAttr.basicStyle.tablePageSize ?? 20
   }
   if (state.totalItems > state.pageInfo.pageSize || state.pageStyle === 'general') {
@@ -273,6 +269,7 @@ const setupPage = (chart: ChartObj, resetPageInfo?: boolean) => {
   if (resetPageInfo) {
     state.pageInfo.currentPage = 1
   }
+  dvMainStore.setViewPageInfo(chart.id, state.pageInfo)
 }
 
 const mouseMove = () => {
@@ -357,6 +354,7 @@ const handleCurrentChange = pageNum => {
 const handlePageSizeChange = pageSize => {
   if (state.pageStyle === 'general') {
     state.currentPageSize = pageSize
+    emitter.emit('set-page-size', pageSize)
   }
   let extReq = { pageSize: pageSize }
   if (chartExtRequest.value) {
@@ -372,7 +370,10 @@ const pointClickTrans = () => {
   }
 }
 
-const touchAction = callback => {
+const touchAction = (callback, fieldId) => {
+  if (fieldId) {
+    state.curActionId = fieldId
+  }
   if (!trackMenu.value.length) {
     callback?.()
   }
@@ -403,10 +404,9 @@ const action = param => {
       state.trackBarStyle.top = barStyleTemp.top + 'px'
     }
 
-    viewTrack.value.trackButtonClick()
+    viewTrack.value.trackButtonClick(view.value.id)
   }
 }
-const appStore = useAppStoreWithOut()
 
 const trackClick = trackAction => {
   const param = state.pointParam
@@ -683,12 +683,6 @@ const autoStyle = computed(() => {
   }
 })
 
-const autoHeightStyle = computed(() => {
-  return {
-    height: 20 * scale.value + 8 + 'px'
-  }
-})
-
 const tabStyle = computed(() => [
   { '--de-pager-color': canvasStyleData.value.component.seniorStyleSetting?.pagerColor }
 ])
@@ -745,7 +739,7 @@ const tablePageClass = computed(() => {
           v-else
           class="table-page-content"
           layout="prev, pager, next, sizes, jumper"
-          v-model:page-size="state.currentPageSize"
+          v-model:page-size="state.pageInfo.pageSize"
           v-model:current-page="state.pageInfo.currentPage"
           :pager-count="5"
           :total="state.pageInfo.total"

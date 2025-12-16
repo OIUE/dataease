@@ -154,7 +154,7 @@ const hanedleMessage = event => {
         }
         if (ele.component === 'DeTabs') {
           ele.propValue.forEach(tabItem => {
-            tabItem.componentData.forEach(tabComponent => {
+            tabItem.componentData?.forEach(tabComponent => {
               const {
                 style: tStyle,
                 propValue: tPropValue,
@@ -215,7 +215,7 @@ const setMobileStyle = debounce(() => {
     transformOrigin: '0 0'
   }
 }, 100)
-const curComponentChangeHandle = info => {
+const curComponentChangeHandle = () => {
   // do change
 }
 onMounted(() => {
@@ -332,7 +332,7 @@ const save = () => {
             :canvas-view-info-mobile="canvasViewInfoMobile"
           ></component-style-editor>
         </div>
-        <div class="config-mobile-tab" v-show="activeCollapse === 'com'">
+        <div class="config-mobile-tab" v-if="activeCollapse === 'com'">
           <div
             :style="{ height: '196px', width: '196px' }"
             class="mobile-wrapper-inner-adaptor"

@@ -9,7 +9,6 @@ import YAxisSelector from '@/views/chart/components/editor/editor-style/componen
 import DualYAxisSelector from '@/views/chart/components/editor/editor-style/components/DualYAxisSelector.vue'
 import TitleSelector from '@/views/chart/components/editor/editor-style/components/TitleSelector.vue'
 import LegendSelector from '@/views/chart/components/editor/editor-style/components/LegendSelector.vue'
-import SummarySelector from '@/views/chart/components/editor/editor-style/components/SummarySelector.vue'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
 import CollapseSwitchItem from '@/components/collapse-switch-item/src/CollapseSwitchItem.vue'
@@ -22,6 +21,7 @@ import BackgroundOverallCommon from '@/components/visualization/component-backgr
 import TableHeaderSelector from '@/views/chart/components/editor/editor-style/components/table/TableHeaderSelector.vue'
 import TableCellSelector from '@/views/chart/components/editor/editor-style/components/table/TableCellSelector.vue'
 import TableTotalSelector from '@/views/chart/components/editor/editor-style/components/table/TableTotalSelector.vue'
+import SummarySelector from '@/views/chart/components/editor/editor-style/components/table/SummarySelector.vue'
 import MiscStyleSelector from '@/views/chart/components/editor/editor-style/components/MiscStyleSelector.vue'
 import IndicatorValueSelector from '@/views/chart/components/editor/editor-style/components/IndicatorValueSelector.vue'
 import IndicatorNameSelector from '@/views/chart/components/editor/editor-style/components/IndicatorNameSelector.vue'
@@ -201,7 +201,7 @@ const onBackgroundChange = (val, prop) => {
   state.initReady && emit('onBackgroundChange', val, prop)
 }
 
-const onActiveChange = val => {
+const onActiveChange = () => {
   snapshotStore.recordSnapshotCache('onActiveChange')
   state.initReady &&
     emit('onStyleAttrChange', {
@@ -489,12 +489,8 @@ watch(
               @onLabelChange="onLabelChange"
             />
           </collapse-switch-item>
-          <!-- tooltip 为鼠标悬停 移动端table看不到效果 不再单独配置 -->
           <collapse-switch-item
-            v-if="
-              showProperties('tooltip-selector') &&
-              (!mobileInPc || (mobileInPc && chart.type.indexOf('table') === -1))
-            "
+            v-if="showProperties('tooltip-selector')"
             v-model="chart.customAttr.tooltip.show"
             :themes="themes"
             :change-model="chart.customAttr.tooltip"

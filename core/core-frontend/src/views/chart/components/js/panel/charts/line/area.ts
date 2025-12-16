@@ -19,7 +19,11 @@ import {
   parseJson,
   setUpStackSeriesColor
 } from '@/views/chart/components/js/util'
-import { valueFormatter } from '@/views/chart/components/js/formatter'
+import {
+  calcNiceMinValue,
+  listenYAxisNiceMinEvents,
+  valueFormatter
+} from '@/views/chart/components/js/formatter'
 import {
   LINE_AXIS_TYPE,
   LINE_EDITOR_PROPERTY,
@@ -126,6 +130,7 @@ export class Area extends G2PlotChartView<AreaOptions, G2Area> {
     newChart.on('point:click', action)
     extremumEvt(newChart, chart, options, container)
     configPlotTooltipEvent(chart, newChart)
+    listenYAxisNiceMinEvents(chart, newChart)
     return newChart
   }
 
@@ -148,7 +153,7 @@ export class Area extends G2PlotChartView<AreaOptions, G2Area> {
       fields: [],
       ...tmpOptions.label,
       layout: labelAttr.fullDisplay ? [{ type: 'limit-in-plot' }] : tmpOptions.label.layout,
-      formatter: (data: Datum, _point) => {
+      formatter: (data: Datum) => {
         if (data.EXTREME) {
           return ''
         }
@@ -270,6 +275,9 @@ export class Area extends G2PlotChartView<AreaOptions, G2Area> {
       }
       return { ...tmpOptions, ...axis }
     }
+    if (axisValue?.auto) {
+      return calcNiceMinValue(chart, options, tmpOptions)
+    }
     return tmpOptions
   }
 
@@ -306,7 +314,7 @@ export class StackArea extends Area {
   propertyInner = {
     ...this['propertyInner'],
     'label-selector': ['vPosition', 'fontSize', 'color', 'labelFormatter'],
-    'tooltip-selector': ['fontSize', 'color', 'tooltipFormatter', 'show']
+    'tooltip-selector': ['fontSize', 'color', 'tooltipFormatter', 'show', 'carousel']
   }
   axisConfig = {
     ...this['axisConfig'],

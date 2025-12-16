@@ -171,6 +171,7 @@
 
           <xpack-component
             :chart="element"
+            resource-table="snapshot"
             jsname="L2NvbXBvbmVudC90aHJlc2hvbGQtd2FybmluZy9FZGl0QmFySGFuZGxlcg=="
             @close-item="closeItem"
           />
@@ -250,9 +251,7 @@ import CustomTabsSort from '@/custom-component/de-tabs/CustomTabsSort.vue'
 import { exportPivotExcel } from '@/views/chart/components/js/panel/common/common_table'
 import { XpackComponent } from '@/components/plugin'
 import { exportPermission, isMobile } from '@/utils/utils'
-import { layerStoreWithOut } from '@/store/modules/data-visualization/layer'
 import { isMainCanvas } from '@/utils/canvasUtils'
-const layerStore = layerStoreWithOut()
 const dvMainStore = dvMainStoreWithOut()
 const snapshotStore = snapshotStoreWithOut()
 const copyStore = copyStoreWithOut()
@@ -267,7 +266,8 @@ const emits = defineEmits([
   'showViewDetails',
   'amRemoveItem',
   'linkJumpSetOpen',
-  'linkageSetOpen'
+  'linkageSetOpen',
+  'componentImageDownload'
 ])
 const { t } = useI18n()
 const { emitter } = useEmitt()
@@ -479,13 +479,12 @@ const exportAsExcel = () => {
   const chartExtRequest = dvMainStore.getLastViewRequestInfo(element.value.id)
   const viewInfo = dvMainStore.getViewDetails(element.value.id)
   const chart = { ...viewInfo, chartExtRequest, data: viewDataInfo, busiFlag: dvInfo.value.type }
-  exportExcelDownload(chart, () => {
+  exportExcelDownload(chart, dvInfo.value.name, () => {
     openMessageLoading(callbackExport)
   })
 }
 const exportAsImage = () => {
-  // do export
-  useEmitt().emitter.emit('componentImageDownload-' + element.value.id)
+  emits('componentImageDownload')
 }
 const deleteComponent = () => {
   eventBus.emit('removeMatrixItem-' + canvasId.value, index.value)
@@ -564,7 +563,7 @@ const linkageChange = item => {
   let checkResult = false
   if (item.linkageFilters && item.linkageFilters.length > 0) {
     item.linkageFilters.forEach(linkage => {
-      if (element.value.id === linkage.sourceViewId) {
+      if (element.value.id === linkage?.sourceViewId) {
         checkResult = true
       }
     })
@@ -587,7 +586,7 @@ const existLinkage = computed(() => {
       })
     } else if (item.component === 'DeTabs') {
       item.propValue.forEach(tabItem => {
-        tabItem.componentData.forEach(tabComponent => {
+        tabItem.componentData?.forEach(tabComponent => {
           if (linkageChange(tabComponent)) {
             linkageFiltersCount++
           }

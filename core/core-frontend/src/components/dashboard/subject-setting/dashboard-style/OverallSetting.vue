@@ -1,5 +1,5 @@
 <template>
-  <el-form label-position="top">
+  <el-form size="small" label-position="top">
     <el-form-item
       class="form-item"
       :class="'form-item-' + themes"
@@ -71,7 +71,6 @@
           v-model="canvasStyleData.dashboard.gapSize"
           :effect="themes"
           controls-position="right"
-          size="middle"
           :min="0"
           :max="10"
           @change="themeChange"
@@ -112,14 +111,12 @@
         type="number"
         :min="1"
         :max="3600"
-        size="middle"
         :disabled="!canvasStyleData.refreshViewEnable"
         @change="onRefreshChange"
       >
         <template #append>
           <el-select
             v-model="canvasStyleData.refreshUnit"
-            size="middle"
             :effect="themes"
             :disabled="!canvasStyleData.refreshViewEnable"
             style="width: 90px"
@@ -162,14 +159,12 @@
         type="number"
         :min="1"
         :max="3600"
-        size="middle"
         :disabled="!canvasStyleData.refreshBrowserEnable"
         @change="onRefreshChange"
       >
         <template #append>
           <el-select
             v-model="canvasStyleData.refreshBrowserUnit"
-            size="middle"
             :effect="themes"
             :disabled="!canvasStyleData.refreshBrowserEnable"
             style="width: 90px"
@@ -215,9 +210,7 @@
         class="radio-span"
         @change="themeChange"
       >
-        <el-radio label="all" :effect="themes">
-          {{ t('visualization.view') }}
-        </el-radio>
+        <el-radio label="all" :effect="themes"> {{ t('visualization.view') }} </el-radio>
         <el-radio label="custom" :effect="themes">
           {{ resourceType }}
         </el-radio>
@@ -232,7 +225,6 @@
         v-model="canvasStyleData.dashboard.resultCount"
         :effect="themes"
         controls-position="right"
-        size="middle"
         :min="1"
         :max="10000"
         @change="themeChange"
@@ -320,7 +312,6 @@ import Icon from '@/components/icon-custom/src/Icon.vue'
 import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
 import { isDesktop } from '@/utils/ModelUtil'
 import eventBus from '@/utils/eventBus'
-import { resetValueFormatter } from '@/views/chart/components/editor/drag-item/utils'
 const appearanceStore = useAppearanceStoreWithOut()
 const isDesktopFlag = isDesktop()
 const snapshotStore = snapshotStoreWithOut()
@@ -338,7 +329,7 @@ const fontFamily = CHART_FONT_FAMILY_ORIGIN.concat(
 )
 
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 
 const resourceType = computed(() =>

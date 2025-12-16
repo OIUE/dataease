@@ -2,12 +2,10 @@
 import { computed, nextTick, onMounted, PropType, reactive, watch } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import { COLOR_PANEL, DEFAULT_MISC } from '@/views/chart/components/editor/util/chart'
-import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { ElSpace } from 'element-plus-secondary'
 import { cloneDeep } from 'lodash-es'
 
 const { t } = useI18n()
-const dvMainStore = dvMainStoreWithOut()
 const props = defineProps({
   chart: {
     type: Object,
@@ -44,7 +42,7 @@ const state = reactive({
   }
 })
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 const emit = defineEmits(['onChangeFlowMapPointForm'])
 
@@ -85,7 +83,6 @@ const init = () => {
   }
 }
 
-const showProperty = prop => props.propertyInner?.includes(prop)
 onMounted(() => {
   init()
 })

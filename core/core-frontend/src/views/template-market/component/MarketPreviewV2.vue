@@ -689,9 +689,9 @@ onMounted(() => {
   }
 
   &:hover {
-    color: #3370ff;
+    color: var(--ed-color-primary, #3370ff);
     &::after {
-      background: #3370ff1a;
+      background: var(--ed-color-primary-1a, #3370ff1a);
       display: block;
     }
   }
@@ -699,7 +699,7 @@ onMounted(() => {
   &:active {
     color: #245bdb;
     &::after {
-      background: #3370ff33;
+      background-color: var(--ed-color-primary-33, #3370ff33);
       display: block;
     }
   }

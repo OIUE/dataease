@@ -70,6 +70,8 @@ const dvMainStore = dvMainStoreWithOut()
 const { canvasViewInfo, mobileInPc } = storeToRefs(dvMainStore)
 const isError = ref(false)
 const appearanceStore = useAppearanceStoreWithOut()
+import { useUserStoreWithOut } from '@/store/modules/user'
+const userStore = useUserStoreWithOut()
 import { useI18n } from '@/hooks/web/useI18n'
 const { t } = useI18n()
 const props = defineProps({
@@ -123,6 +125,12 @@ const state = reactive({
   firstRender: true,
   previewFirstRender: true
 })
+const language_map = {
+  en: 'en_US',
+  tw: 'zh_TW',
+  'zh-CN': 'zh_CN'
+}
+const language = language_map[userStore.getLanguage]
 const dataRowSelect = ref({})
 const dataRowNameSelect = ref({})
 const dataRowNameSelectSource = ref({})
@@ -152,8 +160,8 @@ const outerPlaceholder = t('visualization.component_input_tips')
 const init = ref({
   selector: '#' + tinymceId,
   toolbar_items_size: 'small',
-  language_url: formatDataEaseBi('./tinymce-dataease-private/langs/zh_CN.js'), // 汉化路径是自定义的，一般放在public或static里面
-  language: 'zh_CN',
+  language_url: formatDataEaseBi(`./tinymce-dataease-private/langs/${language}.js`), // 汉化路径是自定义的，一般放在public或static里面
+  language: language,
   skin_url: formatDataEaseBi('./tinymce-dataease-private/skins/ui/oxide'), // 皮肤
   content_css: formatDataEaseBi('./tinymce-dataease-private/skins/content/default/content.css'),
   plugins:
@@ -218,7 +226,7 @@ const init = ref({
       })
 
       // 监听 mouseup 事件以结束调整
-      doc.addEventListener('mouseup', event => {
+      doc.addEventListener('mouseup', () => {
         if (cloneHandle) {
           // 显示原始手柄并移除克隆手柄
           originalHandle.style.display = ''
@@ -370,7 +378,7 @@ const jumpTargetAdaptor = () => {
 
 const assignment = content => {
   if (content) {
-    const on = content?.match(/\[(.+?)\]/g)
+    const on = content?.match(/\[(.+?)\]/g) || []
     if (on) {
       const thresholdStyleInfo = conditionAdaptor(state.viewDataInfo)
       on.forEach(itm => {

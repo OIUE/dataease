@@ -62,6 +62,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -1073,7 +1074,7 @@ public class DatasourceServer implements DatasourceApi {
             }
             coreDatasource.setStatus(status);
         } catch (Exception e) {
-            DEException.throwException(e.getMessage());
+            DEException.throwException(e);
         }
     }
 
@@ -1093,6 +1094,7 @@ public class DatasourceServer implements DatasourceApi {
         PreviewSqlDTO previewSqlDTO = new PreviewSqlDTO();
         previewSqlDTO.setSql(sql);
         previewSqlDTO.setDatasourceId(id);
+        previewSqlDTO.setIsCross(false);
         return datasetDataManage.previewSql(previewSqlDTO);
     }
 
@@ -1153,6 +1155,7 @@ public class DatasourceServer implements DatasourceApi {
                         LicenseUtil.validate();
                         validate(datasource);
                     } catch (Exception e) {
+                        LogUtil.error(e.getMessage(), e);
                     } finally {
                         syncDsIds.removeIf(id -> id.equals(datasource.getId()));
                     }
@@ -1370,10 +1373,10 @@ public class DatasourceServer implements DatasourceApi {
             }
         } catch (DEException e) {
             datasourceDTO.setStatus("Error");
-            DEException.throwException(e.getMessage());
+            throw e;
         } catch (Exception e) {
             datasourceDTO.setStatus("Error");
-            DEException.throwException(e.getMessage());
+            DEException.throwException(e);
         } finally {
             coreDatasource.setStatus(datasourceDTO.getStatus());
             dataSourceManage.innerEditStatus(coreDatasource);
@@ -1458,7 +1461,7 @@ public class DatasourceServer implements DatasourceApi {
             if (exception.getCause() == null) {
                 return exception.getMessage();
             }
-            if (exception instanceof DEException && !(exception.getCause() instanceof DEException)) {
+            if (exception instanceof DEException && (!(exception.getCause() instanceof DEException) && !(exception.getCause() instanceof InvocationTargetException))) {
                 return exception.getMessage();
             }
             exception = exception.getCause();

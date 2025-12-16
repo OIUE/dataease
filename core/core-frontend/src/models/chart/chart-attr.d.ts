@@ -109,6 +109,14 @@ declare interface ChartBasicStyle {
    */
   defaultExpandLevel: number | 'all'
   /**
+   * 表格指标展示位置
+   */
+  quotaPosition: 'col' | 'row'
+  /**
+   * 行头指标列名称
+   */
+  quotaColLabel: string
+  /**
    * 仪表盘样式
    */
   gaugeStyle: string
@@ -174,9 +182,9 @@ declare interface ChartBasicStyle {
    */
   barWidth: number
   /**
-   * 柱子形状：直角｜圆角
+   * 柱子形状：直角｜圆角｜顶部圆角
    */
-  radiusColumnBar?: 'rightAngle' | 'roundAngle'
+  radiusColumnBar?: 'rightAngle' | 'roundAngle' | 'topRoundAngle'
   /**
    * 圆角柱倒角
    */
@@ -298,6 +306,7 @@ declare interface ChartBasicStyle {
     show: boolean
     field: string
     summary: string
+    originName?: string
   }>
   /**
    * 符号地图符号大小最小值
@@ -477,6 +486,10 @@ declare interface ChartTableHeaderAttr {
       name: string
     }[]
   }
+  /**
+   * 透视表行头冻结
+   */
+  rowHeaderFreeze: boolean
 }
 /**
  * 单元格属性
@@ -717,6 +730,18 @@ declare interface ChartMiscAttr {
    * 水波图形状
    */
   liquidShape: string
+  /**
+   * 水波图边框显示
+   */
+  liquidShowBorder: boolean
+  /**
+   * 水波图边框宽度
+   */
+  liquidBorderWidth: number
+  /**
+   * 水波图边框距离
+   */
+  liquidBorderDistance: number
   /**
    * 地图倾角
    */
@@ -1289,6 +1314,10 @@ declare interface ChartIndicatorNameStyle {
    * 指标/名称间距
    */
   nameValueSpacing: number
+  /**
+   * 指标名称位置
+   */
+  namePosition?: 'top' | 'bottom'
 }
 
 /**

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
-import { onMounted, reactive } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import DePreview from '@/components/data-visualization/canvas/DePreview.vue'
 import router from '@/router/mobile'
 import { initCanvasDataMobile, initCanvasData } from '@/utils/canvasUtils'
@@ -16,10 +16,15 @@ import { setTitle } from '@/utils/utils'
 import EmptyBackground from '../../components/empty-background/src/EmptyBackground.vue'
 import { filterEnumMapSync } from '@/utils/componentUtils'
 import CanvasOptBar from '@/components/visualization/CanvasOptBar.vue'
+import { useEmitt } from '@/hooks/web/useEmitt'
+import { downloadCanvas2 } from '@/utils/imgUtils'
 
 const dvMainStore = dvMainStoreWithOut()
 const { t } = useI18n()
 const embeddedStore = useEmbedded()
+
+const previewCanvasContainer = ref(null)
+const downloadStatus = ref(false)
 const state = reactive({
   canvasDataPreview: null,
   canvasStylePreview: null,
@@ -41,6 +46,16 @@ const props = defineProps({
   },
   ticketArgs: propTypes.string.def(null)
 })
+
+const downloadH2 = type => {
+  downloadStatus.value = true
+  nextTick(() => {
+    const vueDom = previewCanvasContainer.value.querySelector('.canvas-container')
+    downloadCanvas2(type, vueDom, state.dvInfo.name, () => {
+      downloadStatus.value = false
+    })
+  })
+}
 
 const loadCanvasDataAsync = async (dvId, dvType) => {
   const jumpInfoParam = embeddedStore.jumpInfoParam || router.currentRoute.value.query.jumpInfoParam
@@ -109,20 +124,25 @@ const loadCanvasDataAsync = async (dvId, dvType) => {
         await router.push('/DashboardEmpty')
         return
       }
-      if (jumpParam) {
-        await filterEnumMapSync(canvasDataResult)
-        dvMainStore.addViewTrackFilter(jumpParam)
+      state.dvInfo = dvInfo
+      if (state.dvInfo.status) {
+        if (jumpParam || attachParam) {
+          await filterEnumMapSync(canvasDataResult)
+        }
       }
       state.canvasDataPreview = canvasDataResult
       state.canvasStylePreview = canvasStyleResult
       state.canvasViewInfoPreview = canvasViewInfoPreview
-      state.dvInfo = dvInfo
       state.curPreviewGap = curPreviewGap
-      state.initState = false
+      if (state.dvInfo.status) {
+        if (jumpParam) {
+          dvMainStore.addViewTrackFilter(jumpParam)
+        }
 
-      dvMainStore.addOuterParamsFilter(attachParam)
-      state.initState = true
-
+        state.initState = false
+        dvMainStore.addOuterParamsFilter(attachParam)
+        state.initState = true
+      }
       if (props.publicLinkStatus) {
         // 设置浏览器title为当前仪表板名称
         document.title = dvInfo.name
@@ -147,6 +167,7 @@ onMounted(async () => {
   }
   dvMainStore.setEmbeddedCallBack(callBackFlag || 'no')
   dvMainStore.setPublicLinkStatus(props.publicLinkStatus)
+  window.addEventListener('popstate', handlePopState)
 })
 
 const initBrowserTimer = () => {
@@ -159,13 +180,28 @@ const initBrowserTimer = () => {
   }
 }
 
+const handlePopState = () => {
+  window.location.reload()
+}
+
+onUnmounted(() => {
+  window.removeEventListener('popstate', handlePopState)
+})
+
+useEmitt({
+  name: 'canvasDownload',
+  callback: function (type = 'img') {
+    downloadH2(type)
+  }
+})
+
 defineExpose({
   loadCanvasDataAsync
 })
 </script>
 
 <template>
-  <div class="content" v-if="state.initState">
+  <div class="content" v-if="state.initState" ref="previewCanvasContainer">
     <canvas-opt-bar
       canvas-id="canvas-main"
       :canvas-style-data="state.canvasStylePreview || {}"
@@ -179,6 +215,7 @@ defineExpose({
       :canvas-view-info="state.canvasViewInfoPreview"
       :dv-info="state.dvInfo"
       :cur-gap="state.curPreviewGap"
+      :show-pop-bar="true"
       :show-linkage-button="false"
       :is-selector="props.isSelector"
     ></de-preview>

@@ -13,42 +13,198 @@
       "
       @change="reUpload"
     />
-    <el-form label-position="top" style="width: 100%">
+    <el-form size="small" label-position="top" style="width: 100%">
       <el-row :gutter="8">
-        <el-col :span="12">
+        <el-col :span="24">
           <el-form-item
             :label="t('visualization.inner_padding')"
             class="form-item w100"
             :class="'form-item-' + themes"
+          ></el-form-item>
+          <el-form-item
+            :label="t('visualization.inner_padding_shorthand_mode')"
+            class="form-item w100"
+            :class="'form-item-' + themes"
           >
-            <el-input-number
-              style="width: 100%"
-              :effect="themes"
-              controls-position="right"
-              size="middle"
-              :min="0"
-              :max="100"
-              v-model="state.commonBackground.innerPadding"
-              @change="onBackgroundChange"
-            />
+            <div style="display: flex; align-items: center; width: 100%; margin-bottom: 8px">
+              <el-select
+                :effect="themes"
+                v-model="state.commonBackground.innerPadding.mode"
+                size="small"
+                style="width: 100%"
+                @change="onBackgroundChange"
+              >
+                <el-option
+                  class="custom-style-option"
+                  v-for="option in paddingModes"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+            </div>
+            <el-row :gutter="8">
+              <el-col :span="12">
+                <div style="display: flex; align-items: center; margin-bottom: 8px">
+                  <span style="width: 30%; padding-right: 8px">{{
+                    t('visualization.edge_top')
+                  }}</span>
+                  <el-input-number
+                    style="width: 70%"
+                    :effect="themes"
+                    controls-position="right"
+                    :min="0"
+                    :max="100"
+                    v-model="state.commonBackground.innerPadding.top"
+                    @change="onBackgroundChange"
+                  />
+                </div>
+                <div style="display: flex; align-items: center">
+                  <span style="width: 30%; padding-right: 8px">{{
+                    t('visualization.edge_left')
+                  }}</span>
+                  <el-input-number
+                    style="width: 70%"
+                    :effect="themes"
+                    controls-position="right"
+                    :min="0"
+                    :max="100"
+                    v-model="state.commonBackground.innerPadding.left"
+                    :disabled="state.commonBackground.innerPadding.mode === ShorthandMode.Uniform"
+                    @change="onBackgroundChange"
+                  />
+                </div>
+              </el-col>
+              <el-col :span="12">
+                <div style="display: flex; align-items: center; margin-bottom: 8px">
+                  <span style="width: 30%; padding-right: 8px">{{
+                    t('visualization.edge_bottom')
+                  }}</span>
+                  <el-input-number
+                    style="width: 70%"
+                    :effect="themes"
+                    :disabled="state.commonBackground.innerPadding.mode !== ShorthandMode.PerEdge"
+                    controls-position="right"
+                    :min="0"
+                    :max="100"
+                    v-model="state.commonBackground.innerPadding.bottom"
+                    @change="onBackgroundChange"
+                  />
+                </div>
+                <div style="display: flex; align-items: center">
+                  <span style="width: 30%; padding-right: 8px">{{
+                    t('visualization.edge_right')
+                  }}</span>
+                  <el-input-number
+                    style="width: 70%"
+                    :effect="themes"
+                    :disabled="state.commonBackground.innerPadding.mode !== ShorthandMode.PerEdge"
+                    controls-position="right"
+                    :min="0"
+                    :max="100"
+                    v-model="state.commonBackground.innerPadding.right"
+                    @change="onBackgroundChange"
+                  />
+                </div>
+              </el-col>
+            </el-row>
           </el-form-item>
         </el-col>
-        <el-col :span="12">
+      </el-row>
+      <el-row :gutter="8">
+        <el-col :span="24">
           <el-form-item
             :label="t('visualization.board_radio')"
             class="form-item w100"
             :class="'form-item-' + themes"
           >
-            <el-input-number
-              style="width: 100%"
-              :effect="themes"
-              controls-position="right"
-              size="middle"
-              :min="0"
-              :max="100"
-              v-model="state.commonBackground.borderRadius"
-              @change="onBackgroundChange"
-            />
+          </el-form-item>
+          <el-form-item
+            :label="t('visualization.corner_shorthand_mode')"
+            class="form-item w100"
+            :class="'form-item-' + themes"
+          >
+            <div style="display: flex; align-items: center; width: 100%; margin-bottom: 8px">
+              <el-select
+                :effect="themes"
+                v-model="state.commonBackground.borderRadius.mode"
+                size="small"
+                @change="onBackgroundChange"
+              >
+                <el-option
+                  class="custom-style-option"
+                  v-for="option in cornerModes"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+            </div>
+            <el-row :gutter="8">
+              <el-col :span="12">
+                <div style="display: flex; align-items: center; margin-bottom: 8px">
+                  <span style="width: 30%; padding-right: 6px">{{
+                    t('visualization.corner_top_left')
+                  }}</span>
+                  <el-input-number
+                    style="width: 70%"
+                    :effect="themes"
+                    controls-position="right"
+                    :min="0"
+                    :max="100"
+                    v-model="state.commonBackground.borderRadius.topLeft"
+                    @change="onBackgroundChange"
+                  />
+                </div>
+                <div style="display: flex; align-items: center">
+                  <span style="width: 30%; padding-right: 6px">{{
+                    t('visualization.corner_bottom_left')
+                  }}</span>
+                  <el-input-number
+                    style="width: 70%"
+                    :effect="themes"
+                    controls-position="right"
+                    :min="0"
+                    :max="100"
+                    v-model="state.commonBackground.borderRadius.bottomLeft"
+                    :disabled="state.commonBackground.borderRadius.mode === ShorthandMode.Uniform"
+                    @change="onBackgroundChange"
+                  />
+                </div>
+              </el-col>
+              <el-col :span="12">
+                <div style="display: flex; align-items: center; margin-bottom: 8px">
+                  <span style="width: 30%; padding-right: 6px">{{
+                    t('visualization.corner_top_right')
+                  }}</span>
+                  <el-input-number
+                    style="width: 70%"
+                    :effect="themes"
+                    :disabled="state.commonBackground.borderRadius.mode !== ShorthandMode.PerEdge"
+                    controls-position="right"
+                    :min="0"
+                    :max="100"
+                    v-model="state.commonBackground.borderRadius.topRight"
+                    @change="onBackgroundChange"
+                  />
+                </div>
+                <div style="display: flex; align-items: center">
+                  <span style="width: 30%; padding-right: 6px">{{
+                    t('visualization.corner_bottom_right')
+                  }}</span>
+                  <el-input-number
+                    style="width: 70%"
+                    :effect="themes"
+                    :disabled="state.commonBackground.borderRadius.mode !== ShorthandMode.PerEdge"
+                    controls-position="right"
+                    :min="0"
+                    :max="100"
+                    v-model="state.commonBackground.borderRadius.bottomRight"
+                    @change="onBackgroundChange"
+                  />
+                </div>
+              </el-col>
+            </el-row>
           </el-form-item>
         </el-col>
       </el-row>
@@ -70,7 +226,6 @@
                 style="width: 100%"
                 :effect="themes"
                 controls-position="right"
-                size="middle"
                 :min="0"
                 :max="30"
                 :disabled="!state.commonBackground.backdropFilterEnable"
@@ -148,7 +303,6 @@
               :disabled="!state.commonBackground.backgroundImageEnable"
               :effect="themes"
               :title="t('visualization.border_color_setting')"
-              style="position: absolute; top: -3px; left: 60px"
               is-custom
               show-alpha
               class="color-picker-style"
@@ -164,7 +318,6 @@
             <el-select
               :style="{ width: computedBackgroundBorderSelectWidth + 'px' }"
               v-model="state.commonBackground.innerImage"
-              size="middle"
               popper-class="board-select"
               :effect="themes"
               :disabled="!state.commonBackground.backgroundImageEnable"
@@ -219,22 +372,22 @@
             <el-row>
               <span
                 style="margin-top: 2px"
-                v-if="!state.commonBackground['outerImage']"
+                v-if="!state.commonBackground.outerImage"
                 class="image-hint"
                 :class="`image-hint_${themes}`"
               >
-                支持JPG、PNG、GIF、SVG
+                {{ t('visualization.panel_background_image_tips') }}
               </span>
 
               <el-button
                 size="small"
                 style="margin: 8px 0 0 -4px"
-                v-if="state.commonBackground['outerImage']"
+                v-if="state.commonBackground.outerImage"
                 text
                 @click="goFile"
                 :disabled="!state.commonBackground.backgroundImageEnable"
               >
-                重新上传
+                {{ t('visualization.reUpload') }}
               </el-button>
             </el-row>
           </div>
@@ -249,7 +402,7 @@
 <script setup lang="ts">
 import { queryVisualizationBackground } from '@/api/visualization/visualizationBackground'
 import { COLOR_PANEL } from '@/views/chart/components/editor/util/chart'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, effect, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { imgUrlTrans } from '@/utils/imgUtils'
 import { snapshotStoreWithOut } from '@/store/modules/data-visualization/snapshot'
 import { beforeUploadCheck, uploadFileResult } from '@/api/staticResource'
@@ -284,8 +437,14 @@ const props = withDefaults(
   }
 )
 
-const state = reactive({
-  commonBackground: {},
+import { State } from '@/components/visualization/component-background/Types'
+import { ShorthandMode } from '@/Types'
+
+const state = reactive<State>({
+  commonBackground: {
+    innerPadding: {},
+    borderRadius: {}
+  },
   BackgroundShowMap: {},
   checked: false,
   backgroundOrigin: {},
@@ -297,12 +456,22 @@ const state = reactive({
   predefineColors: COLOR_PANEL
 })
 
+const paddingModes = Object.values(ShorthandMode).map(item => ({
+  label: t(`visualization.inner_padding_shorthand_mode_${item}`),
+  value: item
+})) as { label: string; value: ShorthandMode }[]
+
+const cornerModes = Object.values(ShorthandMode).map(item => ({
+  label: t(`visualization.corner_shorthand_mode_${item}`),
+  value: item
+})) as { label: string; value: ShorthandMode }[]
+
 const goFile = () => {
   files.value.click()
 }
 
 const sizeMessage = () => {
-  ElMessage.success('图片大小不能超过15M')
+  ElMessage.error('图片大小不能超过15M')
 }
 
 const reUpload = e => {
@@ -312,8 +481,8 @@ const reUpload = e => {
     return
   }
   uploadFileResult(file, fileUrl => {
-    state.commonBackground['outerImage'] = fileUrl
-    state.fileList = [{ url: imgUrlTrans(state.commonBackground['outerImage']) }]
+    state.commonBackground.outerImage = fileUrl
+    state.fileList = [{ url: imgUrlTrans(state.commonBackground.outerImage) }]
     onBackgroundChange()
   })
 }
@@ -325,9 +494,32 @@ const queryBackground = () => {
 }
 
 const init = () => {
-  state.commonBackground = deepCopy(props.commonBackgroundPop)
-  if (state.commonBackground['outerImage']) {
-    state.fileList = [{ url: imgUrlTrans(state.commonBackground['outerImage']) }]
+  const commonBackgroundPop = deepCopy(props.commonBackgroundPop)
+  const innerPadding = commonBackgroundPop.innerPadding
+  if (typeof innerPadding === 'number') {
+    commonBackgroundPop.innerPadding = {
+      mode: ShorthandMode.Uniform,
+      top: innerPadding,
+      right: innerPadding,
+      bottom: innerPadding,
+      left: innerPadding
+    }
+  }
+  const borderRadius = commonBackgroundPop.borderRadius
+  if (typeof borderRadius === 'number') {
+    commonBackgroundPop.borderRadius = {
+      mode: ShorthandMode.Uniform,
+      topLeft: borderRadius,
+      topRight: borderRadius,
+      bottomLeft: borderRadius,
+      bottomRight: borderRadius
+    }
+  }
+  state.commonBackground = commonBackgroundPop
+  updateInnerPadding()
+  updateBorderRadius()
+  if (state.commonBackground.outerImage) {
+    state.fileList = [{ url: imgUrlTrans(state.commonBackground.outerImage) }]
   } else {
     state.fileList = []
   }
@@ -339,7 +531,7 @@ const commitStyle = () => {
 
 const handleRemove = () => {
   state.uploadDisabled = false
-  state.commonBackground['outerImage'] = null
+  state.commonBackground.outerImage = null
   state.fileList = []
   onBackgroundChange()
   commitStyle()
@@ -350,12 +542,36 @@ const handlePictureCardPreview = file => {
 }
 const upload = file => {
   uploadFileResult(file.file, fileUrl => {
-    state.commonBackground['outerImage'] = fileUrl
+    state.commonBackground.outerImage = fileUrl
     onBackgroundChange()
   })
 }
 
+const updateInnerPadding = () => {
+  if (state.commonBackground.innerPadding.mode === ShorthandMode.Uniform) {
+    state.commonBackground.innerPadding.left = state.commonBackground.innerPadding.top
+    state.commonBackground.innerPadding.right = state.commonBackground.innerPadding.top
+    state.commonBackground.innerPadding.bottom = state.commonBackground.innerPadding.top
+  } else if (state.commonBackground.innerPadding.mode === ShorthandMode.Axis) {
+    state.commonBackground.innerPadding.right = state.commonBackground.innerPadding.left
+    state.commonBackground.innerPadding.bottom = state.commonBackground.innerPadding.top
+  }
+}
+
+const updateBorderRadius = () => {
+  if (state.commonBackground.borderRadius.mode === ShorthandMode.Uniform) {
+    state.commonBackground.borderRadius.topRight = state.commonBackground.borderRadius.topLeft
+    state.commonBackground.borderRadius.bottomLeft = state.commonBackground.borderRadius.topLeft
+    state.commonBackground.borderRadius.bottomRight = state.commonBackground.borderRadius.topLeft
+  } else if (state.commonBackground.borderRadius.mode === ShorthandMode.Axis) {
+    state.commonBackground.borderRadius.bottomRight = state.commonBackground.borderRadius.topLeft
+    state.commonBackground.borderRadius.topRight = state.commonBackground.borderRadius.bottomLeft
+  }
+}
+
 const onBackgroundChange = () => {
+  updateInnerPadding()
+  updateBorderRadius()
   emits('onBackgroundChange', state.commonBackground)
 }
 
@@ -482,13 +698,13 @@ watch(
   align-items: center;
 }
 
-.ed-select-dropdown__item {
+.board-select .ed-select-dropdown__item {
   height: 100px !important;
   text-align: center;
   padding: 0px 5px;
 }
 
-.ed-select-dropdown__item.selected::after {
+.board-select .ed-select-dropdown__item.selected::after {
   display: none;
 }
 
@@ -583,6 +799,10 @@ watch(
   }
   .ed-select-dropdown__item.selected {
     background-color: rgba(0, 0, 0, 0) !important;
+  }
+
+  .is-selected::after {
+    display: none;
   }
 }
 </style>

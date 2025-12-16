@@ -1,13 +1,14 @@
 import type { Column, ColumnOptions } from '@antv/g2plot/esm/plots/column'
-import { cloneDeep, each, groupBy, isEmpty } from 'lodash-es'
+import { cloneDeep, defaults, each, groupBy, isEmpty, merge } from 'lodash-es'
 import {
   G2PlotChartView,
   G2PlotDrawOptions
 } from '@/views/chart/components/js/panel/types/impl/g2plot'
 import {
+  convertToAlphaColor,
   flow,
   hexColorToRGBA,
-  hexToRgba,
+  isAlphaColor,
   parseJson,
   setUpGroupSeriesColor,
   setUpStackSeriesColor
@@ -21,6 +22,7 @@ import {
 } from '@/views/chart/components/js/panel/charts/bar/common'
 import {
   configPlotTooltipEvent,
+  configRoundAngle,
   getLabel,
   getPadding,
   getTooltipContainer,
@@ -28,9 +30,14 @@ import {
   TOOLTIP_TPL
 } from '@/views/chart/components/js/panel/common/common_antv'
 import { useI18n } from '@/hooks/web/useI18n'
-import { DEFAULT_BASIC_STYLE, DEFAULT_LABEL } from '@/views/chart/components/editor/util/chart'
+import {
+  DEFAULT_BASIC_STYLE,
+  DEFAULT_LABEL,
+  DEFAULT_LEGEND_STYLE
+} from '@/views/chart/components/editor/util/chart'
 import { clearExtremum, extremumEvt } from '@/views/chart/components/js/extremumUitl'
 import { Group } from '@antv/g-canvas'
+import { getItemsOfView } from '@antv/g2/lib/interaction/action/active-region'
 
 const { t } = useI18n()
 const DEFAULT_DATA: any[] = []
@@ -41,6 +48,7 @@ export class Bar extends G2PlotChartView<ColumnOptions, Column> {
   properties = BAR_EDITOR_PROPERTY
   propertyInner = {
     ...BAR_EDITOR_PROPERTY_INNER,
+    'x-axis-selector': [...BAR_EDITOR_PROPERTY_INNER['x-axis-selector'], 'showLengthLimit'],
     'basic-style-selector': [...BAR_EDITOR_PROPERTY_INNER['basic-style-selector'], 'seriesColor'],
     'label-selector': ['vPosition', 'seriesLabelFormatter', 'showExtremum'],
     'tooltip-selector': [
@@ -81,6 +89,9 @@ export class Bar extends G2PlotChartView<ColumnOptions, Column> {
       clearExtremum(chart)
       return
     }
+    const isGroup = 'bar-group' === this.name && chart.xAxisExt?.length > 0
+    const isStack =
+      ['bar-stack', 'bar-group-stack'].includes(this.name) && chart.extStack?.length > 0
     const data = cloneDeep(drawOptions.chart.data?.data)
     const initOptions: ColumnOptions = {
       ...this.baseOptions,
@@ -92,9 +103,117 @@ export class Bar extends G2PlotChartView<ColumnOptions, Column> {
     const { Column: ColumnClass } = await import('@antv/g2plot/esm/plots/column')
     newChart = new ColumnClass(container, options)
     newChart.on('interval:click', action)
+    // 只处理柱状图，分组和堆叠的阴影部分没有子维度信息
+    if (this.name === 'bar' && options.tooltip) {
+      newChart.on('plot:click', e => {
+        if (e.target?.cfg?.renderer !== 'canvas') {
+          return
+        }
+        const activeRegion = e.view.backgroundGroup.cfg.children.find(
+          i => i.cfg.name === 'active-region'
+        )
+        if (activeRegion?.cfg.visible) {
+          const items = getItemsOfView(
+            e.view,
+            { x: e.x, y: e.y },
+            e.view.getController('tooltip').getTooltipCfg()
+          )
+          if (items?.length) {
+            const datum = items[0].data
+            if (datum && datum.field) {
+              action({
+                x: e.x,
+                y: e.y,
+                data: {
+                  data: datum
+                }
+              })
+            }
+          }
+        }
+      })
+    }
     extremumEvt(newChart, chart, options, container)
     configPlotTooltipEvent(chart, newChart)
+    this.configXAxisLengthLimit(chart, newChart)
     return newChart
+  }
+
+  private configXAxisLengthLimit(chart: Chart, chartObj: Column): void {
+    const xAxis = parseJson(chart.customStyle).xAxis
+    if (!xAxis.show || !xAxis.axisLabel?.show) {
+      return
+    }
+    let hideTimer
+    const { tooltip } = parseJson(chart.customAttr)
+    chartObj?.on('axis-label:mousemove', e => {
+      const showText = e.target?.attrs?.text
+      if (!showText?.endsWith('...')) {
+        return
+      }
+      hideTimer && clearTimeout(hideTimer)
+      const originText = e.target?.cfg?.delegateObject?.item?.name
+      const parentContainer: HTMLDivElement = e.view?.ele
+      let axisLabelDom = parentContainer.getElementsByClassName(
+        'g2-axis-label-tooltip'
+      )[0] as HTMLDivElement
+      if (!axisLabelDom) {
+        axisLabelDom = document.createElement('div')
+        merge(axisLabelDom.style, {
+          left: '0px',
+          top: '0px',
+          display: 'none',
+          position: 'absolute',
+          padding: '4px 8px',
+          borderRadius: '4px',
+          zIndex: '1',
+          cursor: 'default',
+          pointerEvents: 'none',
+          transition:
+            'left 0.4s cubic-bezier(0.23, 1, 0.32, 1), top 0.4s cubic-bezier(0.23, 1, 0.32, 1)',
+          boxShadow: 'rgba(0, 0, 0, 0.1) 0px 4px 8px 0px',
+          color: tooltip.color,
+          fontSize: `${tooltip.fontSize}px`,
+          backgroundColor: tooltip.backgroundColor
+        })
+        axisLabelDom.className = 'g2-axis-label-tooltip'
+        parentContainer.appendChild(axisLabelDom)
+      }
+      const { width: labelWidth, height: labelHeight } = axisLabelDom.getBoundingClientRect()
+      let left = e.x - (tooltip.fontSize * originText.length) / 2 - 10
+      let top = e.y - tooltip.fontSize - 18
+      if (labelWidth) {
+        if (e.x - labelWidth < 10) {
+          left = 0
+        } else {
+          left = e.x - labelWidth - 10
+        }
+      }
+      if (labelHeight) {
+        if (e.y < labelHeight) {
+          top = e.y + 10
+        } else {
+          top = e.y - labelHeight - 10
+        }
+      }
+      axisLabelDom.style.left = `${left}px`
+      axisLabelDom.style.top = `${top}px`
+      axisLabelDom.innerText = originText
+      if (axisLabelDom.style.display !== 'block') {
+        axisLabelDom.style.display = 'block'
+      }
+    })
+    chartObj?.on('axis-label:mouseleave', e => {
+      const parentContainer: HTMLDivElement = e.view?.ele
+      const axisLabelDom = parentContainer.getElementsByClassName(
+        'g2-axis-label-tooltip'
+      )[0] as HTMLDivElement
+      if (axisLabelDom) {
+        hideTimer = setTimeout(() => {
+          axisLabelDom.style.display = 'none'
+        }, 200)
+      }
+    })
   }
 
   protected configLabel(chart: Chart, options: ColumnOptions): ColumnOptions {
@@ -115,7 +234,7 @@ export class Bar extends G2PlotChartView<ColumnOptions, Column> {
     const label = {
       fields: [],
       ...tmpOptions.label,
-      formatter: (data: Datum, _point) => {
+      formatter: (data: Datum) => {
         if (data.EXTREME) {
           return ''
         }
@@ -181,19 +300,9 @@ export class Bar extends G2PlotChartView<ColumnOptions, Column> {
         color
       }
     }
-    if (basicStyle.radiusColumnBar === 'roundAngle') {
-      const columnStyle = {
-        radius: [
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius,
-          basicStyle.columnBarRightAngleRadius
-        ]
-      }
-      options = {
-        ...options,
-        columnStyle
-      }
+    options = {
+      ...options,
+      ...configRoundAngle(chart, 'columnStyle')
     }
     let columnWidthRatio
     const _v = basicStyle.columnWidthRatio ?? DEFAULT_BASIC_STYLE.columnWidthRatio
@@ -209,6 +318,23 @@ export class Bar extends G2PlotChartView<ColumnOptions, Column> {
     }
 
     return options
+  }
+
+  protected configXAxis(chart: Chart, options: ColumnOptions): ColumnOptions {
+    const tmpOptions = super.configXAxis(chart, options)
+    if (!tmpOptions.xAxis) {
+      return tmpOptions
+    }
+    const xAxis = parseJson(chart.customStyle).xAxis
+    if (tmpOptions.xAxis.label) {
+      const { lengthLimit } = xAxis.axisLabel
+      defaults(tmpOptions.xAxis.label, {
+        formatter: value => {
+          return value?.length > lengthLimit ? value.substring(0, lengthLimit) + '...' : value
+        }
+      })
+    }
+    return tmpOptions
   }
 
   protected configYAxis(chart: Chart, options: ColumnOptions): ColumnOptions {
@@ -274,7 +400,7 @@ export class Bar extends G2PlotChartView<ColumnOptions, Column> {
  * 堆叠柱状图
  */
 export class StackBar extends Bar {
-  properties = BAR_EDITOR_PROPERTY.filter(ele => ele !== 'threshold')
+  properties: EditorProperty[] = BAR_EDITOR_PROPERTY.filter(ele => ele !== 'threshold')
   propertyInner = {
     ...this['propertyInner'],
     'label-selector': [
@@ -286,7 +412,15 @@ export class StackBar extends Bar {
       'totalFormatter',
       'showStackQuota'
     ],
-    'tooltip-selector': ['fontSize', 'color', 'backgroundColor', 'tooltipFormatter', 'show']
+    'tooltip-selector': [
+      'fontSize',
+      'color',
+      'backgroundColor',
+      'tooltipFormatter',
+      'show',
+      'carousel'
+    ],
+    'legend-selector': [...BAR_EDITOR_PROPERTY_INNER['legend-selector'], 'legendSort']
   }
   protected configLabel(chart: Chart, options: ColumnOptions): ColumnOptions {
     let label = getLabel(chart)
@@ -393,6 +527,113 @@ export class StackBar extends Bar {
     return options
   }
 
+  protected configSortedLegend(chart: Chart, options: ColumnOptions): ColumnOptions {
+    const optionTmp = super.configLegend(chart, options)
+    if (!optionTmp.legend) {
+      return optionTmp
+    }
+    const extStack = chart.extStack[0]
+    if (extStack?.customSort?.length > 0) {
+      // 图例自定义排序
+      const sort = extStack.customSort ?? []
+      if (sort?.length) {
+        // 用值域限定排序，有可能出现新数据但是未出现在图表上，所以这边要遍历一下子维度，加到后面，让新数据显示出来
+        const data = optionTmp.data
+        const cats =
+          data?.reduce((p, n) => {
+            const cat = n['category']
+            if (cat && !p.includes(cat)) {
+              p.push(cat)
+            }
+            return p
+          }, []) || []
+        const values = sort.reduce((p, n) => {
+          if (cats.includes(n)) {
+            const index = cats.indexOf(n)
+            if (index !== -1) {
+              cats.splice(index, 1)
+            }
+            p.push(n)
+          }
+          return p
+        }, [])
+        cats.length > 0 && values.push(...cats)
+        optionTmp.meta = {
+          ...optionTmp.meta,
+          category: {
+            type: 'cat',
+            values
+          }
+        }
+      }
+    }
+
+    const customStyle = parseJson(chart.customStyle)
+    let size
+    if (customStyle && customStyle.legend) {
+      size = defaults(JSON.parse(JSON.stringify(customStyle.legend)), DEFAULT_LEGEND_STYLE).size
+    } else {
+      size = DEFAULT_LEGEND_STYLE.size
+    }
+
+    optionTmp.legend.marker.style = style => {
+      return {
+        r: size,
+        fill: style.fill
+      }
+    }
+    const { sort, customSort, icon } = customStyle.legend
+    if (sort && sort !== 'none' && chart.extStack.length) {
+      const customAttr = parseJson(chart.customAttr)
+      const { basicStyle } = customAttr
+      const seriesMap =
+        basicStyle.seriesColor?.reduce((p, n) => {
+          p[n.id] = n
+          return p
+        }, {}) || {}
+      const dupCheck = new Set()
+      const colors = optionTmp.color ?? optionTmp.theme.styleSheet.paletteQualitative10
+      const items = optionTmp.data?.reduce((arr, item) => {
+        if (!dupCheck.has(item.category)) {
+          const fill = seriesMap[item.category]?.color ?? colors[dupCheck.size % colors.length]
+          dupCheck.add(item.category)
+          arr.push({
+            name: item.category,
+            value: item.category,
+            marker: {
+              symbol: icon,
+              style: {
+                r: size,
+                fill: isAlphaColor(fill) ? fill : convertToAlphaColor(fill, basicStyle.alpha)
+              }
+            }
+          })
+        }
+        return arr
+      }, [])
+      if (sort !== 'custom') {
+        items.sort((a, b) => {
+          return sort !== 'desc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+        })
+      } else {
+        const tmp = []
+        ;(customSort || []).forEach(item => {
+          const index = items.findIndex(i => i.name === item)
+          if (index !== -1) {
+            tmp.push(items[index])
+            items.splice(index, 1)
+          }
+        })
+        items.unshift(...tmp)
+      }
+      optionTmp.legend.items = items
+      if (extStack?.customSort?.length > 0) {
+        delete optionTmp.meta?.category.values
+      }
+    }
+    return optionTmp
+  }
+
   public setupSeriesColor(chart: ChartObj, data?: any[]): ChartBasicStyle['seriesColor'] {
     return setUpStackSeriesColor(chart, data)
   }
@@ -406,7 +647,7 @@ export class StackBar extends Bar {
       this.configBasicStyle,
       this.configLabel,
       this.configTooltip,
-      this.configLegend,
+      this.configSortedLegend,
       this.configXAxis,
       this.configYAxis,
       this.configSlider,
@@ -437,7 +678,8 @@ export class GroupBar extends StackBar {
   properties = BAR_EDITOR_PROPERTY
   propertyInner = {
     ...this['propertyInner'],
-    'label-selector': [...BAR_EDITOR_PROPERTY_INNER['label-selector'], 'vPosition', 'showExtremum']
+    'label-selector': [...BAR_EDITOR_PROPERTY_INNER['label-selector'], 'vPosition', 'showExtremum'],
+    'legend-selector': BAR_EDITOR_PROPERTY_INNER['legend-selector']
   }
   axisConfig = {
     ...this['axisConfig'],
@@ -526,7 +768,7 @@ export class GroupBar extends StackBar {
     baseOptions.label.style.fill = labelAttr.color
     const label = {
       ...baseOptions.label,
-      formatter: function (param: Datum, _point) {
+      formatter: function (param: Datum) {
         if (param.EXTREME) {
           return ''
         }
@@ -570,6 +812,7 @@ export class GroupBar extends StackBar {
     super(name)
     this.baseOptions = {
       ...this.baseOptions,
+      marginRatio: 0,
       isGroup: true,
       isStack: false,
       meta: {
@@ -588,7 +831,8 @@ export class GroupBar extends StackBar {
 export class GroupStackBar extends StackBar {
   propertyInner = {
     ...this['propertyInner'],
-    'label-selector': [...BAR_EDITOR_PROPERTY_INNER['label-selector'], 'vPosition']
+    'label-selector': [...BAR_EDITOR_PROPERTY_INNER['label-selector'], 'vPosition'],
+    'legend-selector': BAR_EDITOR_PROPERTY_INNER['legend-selector']
   }
   protected configTheme(chart: Chart, options: ColumnOptions): ColumnOptions {
     const baseOptions = super.configTheme(chart, options)
@@ -684,7 +928,7 @@ export class PercentageStackBar extends GroupStackBar {
   propertyInner = {
     ...this['propertyInner'],
     'label-selector': ['color', 'fontSize', 'vPosition', 'reserveDecimalCount'],
-    'tooltip-selector': ['color', 'fontSize', 'backgroundColor', 'show']
+    'tooltip-selector': ['color', 'fontSize', 'backgroundColor', 'show', 'carousel']
   }
   protected configLabel(chart: Chart, options: ColumnOptions): ColumnOptions {
     const baseOptions = super.configLabel(chart, options)

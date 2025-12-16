@@ -6,7 +6,6 @@ import { PropType, computed, onMounted, reactive, watch, nextTick } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import {
   COLOR_PANEL,
-  CHART_FONT_FAMILY,
   CHART_FONT_LETTER_SPACE,
   DEFAULT_INDICATOR_NAME_STYLE,
   DEFAULT_BASIC_STYLE,
@@ -14,14 +13,9 @@ import {
 } from '@/views/chart/components/editor/util/chart'
 import { cloneDeep, defaultsDeep } from 'lodash-es'
 import Icon from '@/components/icon-custom/src/Icon.vue'
-import { hexColorToRGBA } from '@/views/chart/components/js/util'
-import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
-import { storeToRefs } from 'pinia'
 import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
 
 const { t } = useI18n()
-const dvMainStore = dvMainStoreWithOut()
-const { batchOptStatus } = storeToRefs(dvMainStore)
 const appearanceStore = useAppearanceStoreWithOut()
 
 const props = defineProps({
@@ -40,7 +34,7 @@ const props = defineProps({
 
 const emit = defineEmits(['onIndicatorNameChange'])
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 const predefineColors = COLOR_PANEL
 const fontFamily = CHART_FONT_FAMILY_ORIGIN.concat(
@@ -51,6 +45,11 @@ const fontFamily = CHART_FONT_FAMILY_ORIGIN.concat(
 )
 const fontLetterSpace = CHART_FONT_LETTER_SPACE
 
+const namePositionList = [
+  { name: t('chart.name_position_top'), value: 'top' },
+  { name: t('chart.name_position_bottom'), value: 'bottom' }
+]
+
 const state = reactive({
   indicatorNameForm: JSON.parse(JSON.stringify(DEFAULT_INDICATOR_NAME_STYLE)),
   basicStyleForm: {} as ChartBasicStyle
@@ -59,6 +58,12 @@ const state = reactive({
 const fontSizeList = computed(() => {
   const arr = []
   for (let i = 10; i <= 60; i = i + 2) {
+    arr.push({
+      name: i + '',
+      value: i
+    })
+  }
+  for (let i = 70; i <= 210; i += 10) {
     arr.push({
       name: i + '',
       value: i
@@ -119,6 +124,7 @@ defineExpose({ getFormData })
       :disabled="!state.indicatorNameForm.show"
       :model="state.indicatorNameForm"
       label-position="top"
+      size="small"
     >
       <el-form-item
         class="form-item"
@@ -273,6 +279,27 @@ defineExpose({ getFormData })
           :effect="themes"
           @change="changeTitleStyle('nameValueSpacing')"
         />
+      </el-form-item>
+      <el-form-item
+        class="form-item name-value-spacing-input"
+        :class="'form-item-' + themes"
+        :label="t('chart.name_position')"
+      >
+        <el-select
+          :effect="themes"
+          v-model="state.indicatorNameForm.namePosition"
+          size="small"
+          style="width: 100%"
+          @change="changeTitleStyle('namePosition')"
+        >
+          <el-option
+            class="custom-style-option"
+            v-for="option in namePositionList"
+            :key="option.value"
+            :label="option.name"
+            :value="option.value"
+          />
+        </el-select>
       </el-form-item>
     </el-form>
   </div>

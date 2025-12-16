@@ -9,7 +9,7 @@ import deDelete from '@/assets/svg/de-delete.svg'
 import icon_warning_filled from '@/assets/svg/icon_warning_filled.svg'
 import icon_deleteTrash_outlined from '@/assets/svg/icon_delete-trash_outlined.svg'
 import icon_edit_outlined from '@/assets/svg/icon_edit_outlined.svg'
-import { ref, reactive, h, computed, toRefs, nextTick, watch } from 'vue'
+import { ref, reactive, computed, toRefs, nextTick, watch } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import type { FormInstance, FormRules } from 'element-plus-secondary'
 import EmptyBackground from '@/components/empty-background/src/EmptyBackground.vue'
@@ -24,7 +24,7 @@ import { CustomPassword } from '@/components/custom-password'
 import { ElForm, ElMessage, ElMessageBox } from 'element-plus-secondary'
 import Cron from '@/components/cron/src/Cron.vue'
 import { ComponentPublicInstance } from 'vue'
-import { PluginComponent, XpackComponent } from '@/components/plugin'
+import { XpackComponent } from '@/components/plugin'
 import { iconFieldMap } from '@/components/icon-group/field-list'
 import { boolean } from 'mathjs'
 const { t } = useI18n()
@@ -82,6 +82,9 @@ const state = reactive({
 })
 
 const schemas = ref([])
+const targetCharset = ref(['GBK', 'UTF-8'])
+const charset = ref(['GBK', 'BIG5', 'ISO-8859-1', 'UTF-8', 'UTF-16', 'CP850', 'EUC_JP', 'EUC_KR'])
+
 const loading = ref(false)
 const dsForm = ref<FormInstance>()
 
@@ -106,8 +109,6 @@ const defaultRule = {
 const rule = ref<FormRules>(cloneDeep(defaultRule))
 const api_table_title = ref('')
 const editApiItem = ref()
-const xpack = ref()
-const visible = ref(false)
 const defaultApiItem = {
   name: '',
   deTableName: '',
@@ -138,7 +139,7 @@ const defaultApiItem = {
   useJsonPath: false,
   jsonPath: ''
 }
-
+let time
 const initForm = (type, pluginDsList, indexPlugin, isPluginDs) => {
   pluginDs.value = pluginDsList
   pluginIndex.value = indexPlugin
@@ -155,9 +156,9 @@ const initForm = (type, pluginDsList, indexPlugin, isPluginDs) => {
       host: '',
       authMethod: '',
       port: '',
-      initialPoolSize: 5,
-      minPoolSize: 5,
-      maxPoolSize: 5,
+      initialPoolSize: 50,
+      minPoolSize: 50,
+      maxPoolSize: 100,
       queryTimeout: 30
     }
     schemas.value = []
@@ -180,6 +181,12 @@ const initForm = (type, pluginDsList, indexPlugin, isPluginDs) => {
     form.value.configuration.connectionType = 'sid'
   }
   form.value.type = type
+
+  time = setTimeout(() => {
+    clearTimeout(time)
+    dsApiForm.value && dsApiForm.value.clearValidate()
+    dsForm.value && dsForm.value.clearValidate()
+  }, 0)
 }
 
 const notapiexcelconfig = computed(() => form.value && !form.value.type.startsWith('API'))
@@ -446,35 +453,6 @@ const addApiItem = item => {
   })
 }
 
-const addLarkItem = item => {
-  let apiItem = null
-  let editItem = false
-  api_table_title.value = t('datasource.data_table')
-  if (item) {
-    apiItem = cloneDeep(item)
-    editItem = true
-  } else {
-    apiItem = cloneDeep(defaultApiItem)
-    apiItem.type = activeName.value
-    let serialNumber1 =
-      form.value.apiConfiguration.length > 0
-        ? form.value.apiConfiguration[form.value.apiConfiguration.length - 1].serialNumber + 1
-        : 0
-    let serialNumber2 =
-      form.value.paramsConfiguration && form.value.paramsConfiguration.length > 0
-        ? form.value.paramsConfiguration[form.value.paramsConfiguration.length - 1].serialNumber + 1
-        : 0
-    apiItem.serialNumber = serialNumber1 + serialNumber2
-  }
-  visible.value = true
-  nextTick(() => {
-    xpack?.value?.invokeMethod({
-      methodName: 'initApiItem',
-      args: [apiItem, form.value, activeName.value, editItem, isSupportSetKey.value]
-    })
-  })
-}
-
 const activeName = ref('table')
 const showPriority = ref(false)
 const showSSH = ref(false)
@@ -656,7 +634,6 @@ const apiRule = {
 }
 const dialogEditParams = ref(false)
 const dialogRenameApi = ref(false)
-const dialogAddLarkItem = ref(false)
 const activeParamsName = ref('')
 const activeParamsID = ref(0)
 const paramsObj = ref({
@@ -773,21 +750,6 @@ const handleApiParams = (cmd: string, data) => {
   }
 }
 
-const editParams = data => {
-  dialogEditParams.value = true
-}
-
-const getPluginStatic = () => {
-  const arr = pluginDs.value.filter(ele => {
-    return ele.type === form.value.type
-  })
-  return pluginIndex.value
-    ? pluginIndex.value
-    : arr && arr.length > 0
-    ? arr[0].staticMap?.index
-    : null
-}
-
 const delParams = data => {
   ElMessageBox.confirm(t('data_source.sure_to_delete'), {
     confirmButtonType: 'danger',
@@ -881,7 +843,9 @@ defineExpose({
             </el-tabs>
             <el-button type="primary" style="margin-left: auto" @click="() => addApiItem(null)">
               <template #icon>
-                <Icon name="icon_add_outlined"><icon_add_outlined class="svg-icon" /></Icon>
+                <Icon name="icon_add_outlined">
+                  <icon_add_outlined class="svg-icon" />
+                </Icon>
               </template>
               {{ t('common.add') }}
             </el-button>
@@ -914,7 +878,9 @@ defineExpose({
                   </el-col>
                   <el-col style="text-align: right" :span="5">
                     <el-icon class="de-copy-icon hover-icon" @click.stop="copyItem(api)">
-                      <Icon name="de-copy"><deCopy class="svg-icon" /></Icon>
+                      <Icon name="de-copy">
+                        <deCopy class="svg-icon" />
+                      </Icon>
                     </el-icon>
 
                     <span @click.stop>
@@ -1012,13 +978,13 @@ defineExpose({
                   <template #default="scope">
                     <div class="flex-align-center icon">
                       <el-icon>
-                        <Icon
-                          ><component
+                        <Icon>
+                          <component
                             class="svg-icon"
                             :class="`field-icon-${fieldType[scope.row.deType]}`"
                             :is="iconFieldMap[fieldType[scope.row.deType]]"
-                          ></component
-                        ></Icon>
+                          ></component>
+                        </Icon>
                       </el-icon>
                       {{ fieldTypeText[scope.row.deType] }}
                     </div>
@@ -1029,9 +995,9 @@ defineExpose({
                   <template #default="scope">
                     <el-button text @click.stop="delParams(scope.row)">
                       <template #icon>
-                        <Icon name="icon_delete-trash_outlined"
-                          ><icon_deleteTrash_outlined class="svg-icon"
-                        /></Icon>
+                        <Icon name="icon_delete-trash_outlined">
+                          <icon_deleteTrash_outlined class="svg-icon" />
+                        </Icon>
                       </template>
                     </el-button>
                   </template>
@@ -1193,7 +1159,9 @@ defineExpose({
               <span class="name">{{ t('datasource.schema') }}<i class="required" /></span>
               <el-button text size="small" @click="getDsSchema()">
                 <template #icon>
-                  <Icon name="icon_add_outlined"><icon_add_outlined class="svg-icon" /></Icon>
+                  <Icon name="icon_add_outlined">
+                    <icon_add_outlined class="svg-icon" />
+                  </Icon>
                 </template>
                 {{ t('datasource.get_schema') }}
               </el-button>
@@ -1207,6 +1175,26 @@ defineExpose({
               @change="validatorSchema"
               @blur="validatorSchema"
             />
+          </el-form-item>
+          <el-form-item v-if="form.type == 'oracle'" :label="$t('datasource.charset')">
+            <el-select
+              v-model="form.configuration.charset"
+              filterable
+              :placeholder="$t('datasource.please_choose_charset')"
+              class="de-select"
+            >
+              <el-option v-for="item in charset" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="form.type == 'oracle'" :label="$t('datasource.targetCharset')">
+            <el-select
+              v-model="form.configuration.targetCharset"
+              filterable
+              :placeholder="$t('datasource.please_choose_targetCharset')"
+              class="de-select"
+            >
+              <el-option v-for="item in targetCharset" :key="item" :label="item" :value="item" />
+            </el-select>
           </el-form-item>
           <el-form-item
             :label="t('datasource.extra_params')"
@@ -1236,9 +1224,9 @@ defineExpose({
           </el-form-item>
           <template v-if="showSSH">
             <el-form-item>
-              <el-checkbox v-model="form.configuration.useSSH">{{
-                t('data_source.enable_ssh')
-              }}</el-checkbox>
+              <el-checkbox v-model="form.configuration.useSSH"
+                >{{ t('data_source.enable_ssh') }}
+              </el-checkbox>
             </el-form-item>
             <el-form-item :label="t('data_source.host')" prop="configuration.sshHost">
               <el-input
@@ -1542,8 +1530,8 @@ defineExpose({
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button secondary @click="paramsResetForm">{{ t('dataset.cancel') }} </el-button>
-          <el-button type="primary" @click="saveParamsObj">{{ t('dataset.confirm') }} </el-button>
+          <el-button secondary @click="paramsResetForm">{{ t('dataset.cancel') }}</el-button>
+          <el-button type="primary" @click="saveParamsObj">{{ t('dataset.confirm') }}</el-button>
         </template>
       </el-dialog>
       <el-dialog
@@ -1566,8 +1554,8 @@ defineExpose({
           </el-form-item>
         </el-form>
         <template #footer>
-          <el-button secondary @click="apiResetForm">{{ t('dataset.cancel') }} </el-button>
-          <el-button type="primary" @click="saveApiObj">{{ t('dataset.confirm') }} </el-button>
+          <el-button secondary @click="apiResetForm">{{ t('dataset.cancel') }}</el-button>
+          <el-button type="primary" @click="saveApiObj">{{ t('dataset.confirm') }}</el-button>
         </template>
       </el-dialog>
       <api-http-request-draw @return-item="returnItem" ref="editApiItem"></api-http-request-draw>
@@ -1580,6 +1568,7 @@ defineExpose({
   width: 100%;
   display: flex;
   justify-content: center;
+
   .ed-radio {
     height: 22px;
   }
@@ -1598,6 +1587,7 @@ defineExpose({
   .de-select {
     width: 100%;
   }
+
   .ed-input-number {
     width: 100%;
   }
@@ -1625,16 +1615,20 @@ defineExpose({
     .ed-input__wrapper {
       width: 100%;
     }
+
     width: 100%;
   }
+
   .simple-cron {
     height: 32px;
+
     .ed-select,
     .ed-input-number {
       width: 140px;
       margin: 0 8px;
     }
   }
+
   .detail-inner {
     width: 800px;
     padding-top: 8px;
@@ -1655,6 +1649,7 @@ defineExpose({
       border: 1px solid #bbbfc4;
       width: 300px;
       padding: 16px;
+
       .name-copy {
         display: none;
         line-height: 24px;
@@ -1682,6 +1677,7 @@ defineExpose({
 
     .table-info-mr {
       margin: 28px 0 12px 0;
+
       .api-tabs {
         :deep(.ed-tabs__nav-wrap::after) {
           display: none;
@@ -1718,6 +1714,7 @@ defineExpose({
         font-size: 14px;
         font-style: normal;
         line-height: 22px;
+
         &::before {
           width: 8px;
           height: 8px;
@@ -1758,6 +1755,7 @@ defineExpose({
   flex-wrap: wrap;
   margin-left: -16px;
 }
+
 .api-card {
   height: 120px;
   width: 392px;
@@ -1772,20 +1770,24 @@ defineExpose({
   &:hover {
     border-color: var(--ed-color-primary);
   }
+
   .name {
     font-size: 16px;
     font-weight: 500;
     margin-right: 8px;
     max-width: 70%;
   }
+
   .req-title,
   .req-value {
     display: flex;
     font-size: 14px;
     font-weight: 400;
+
     :nth-child(1) {
       width: 120px;
     }
+
     :nth-child(2) {
       margin-left: 24px;
       max-width: 230px;
@@ -1794,20 +1796,25 @@ defineExpose({
       white-space: nowrap;
     }
   }
+
   .req-title {
     color: var(--deTextSecondary, #646a73);
     margin: 16px 0 4px 0;
   }
+
   .req-value {
     color: var(--deTextPrimary, #1f2329);
   }
+
   .de-copy-icon {
     margin-right: 16px;
     color: var(--deTextSecondary, #646a73);
   }
+
   .de-delete-icon {
     cursor: pointer;
   }
+
   .de-tag {
     display: inline-flex;
     justify-content: center;
@@ -1835,6 +1842,7 @@ defineExpose({
   padding: 20px 24px !important;
   display: flex;
   flex-wrap: wrap;
+
   .small {
     height: 28px;
     min-width: 48px !important;
@@ -1852,11 +1860,13 @@ defineExpose({
     margin-left: 8.67px;
     color: var(--deTextPrimary, #1f2329);
   }
+
   i {
     font-size: 14.666666030883789px;
     color: var(--deWarning, #ff8800);
     line-height: 22px;
   }
+
   .foot {
     text-align: right;
     width: 100%;
@@ -1869,9 +1879,11 @@ defineExpose({
     display: flex !important;
     justify-content: space-between;
     padding-right: 0;
+
     &::after {
       display: none;
     }
+
     .name {
       .required::after {
         content: '*';

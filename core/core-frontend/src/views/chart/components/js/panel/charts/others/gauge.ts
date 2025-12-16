@@ -11,7 +11,7 @@ import {
   getScaleValue
 } from '@/views/chart/components/editor/util/chart'
 import { valueFormatter } from '@/views/chart/components/js/formatter'
-import { getPadding, setGradientColor } from '@/views/chart/components/js/panel/common/common_antv'
+import { setGradientColor } from '@/views/chart/components/js/panel/common/common_antv'
 import { useI18n } from '@/hooks/web/useI18n'
 import { merge } from 'lodash-es'
 
@@ -74,7 +74,7 @@ export class Gauge extends G2PlotChartView<GaugeOptions, G2Gauge> {
     // options
     const initOptions: GaugeOptions = {
       percent: 0,
-      appendPadding: getPadding(chart),
+      appendPadding: [0, 10, 15, 10],
       axis: {
         tickInterval: 0.2,
         label: {
@@ -109,7 +109,9 @@ export class Gauge extends G2PlotChartView<GaugeOptions, G2Gauge> {
         }
       })
     })
-    const hasNoneData = chart.data?.series.some(s => !s.data?.[0])
+    const hasNoneData = chart.data?.series.some(
+      s => s.data?.[0] === undefined || s.data?.[0] === null
+    )
     this.configEmptyDataStyle(hasNoneData ? [] : [1], container, newChart)
     if (hasNoneData) {
       return

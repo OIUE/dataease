@@ -45,7 +45,7 @@ export const copyStore = defineStore('copy', {
     ) {
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const _this = this
-      const { width, height, scale } = canvasStyleData.value
+      const { scale } = canvasStyleData.value
       Object.keys(outerMultiplexingComponents).forEach(function (componentId, index) {
         const newComponent = deepCopy(outerMultiplexingComponents[componentId])
         newComponent.canvasId = 'canvas-main'
@@ -54,7 +54,6 @@ export const copyStore = defineStore('copy', {
         } else {
           // dashboard 平铺2个
           const xPositionOffset = index % 2
-          const yPositionOffset = index % 2
           if (!(copyFrom === 'multiplexing' && !multiplexingStyleAdapt.value)) {
             newComponent.sizeX = pcMatrixCount.value.x / 2
             newComponent.sizeY = 14
@@ -129,7 +128,10 @@ export const copyStore = defineStore('copy', {
           if (dvInfo.value.type === 'dashboard') {
             eventBus.emit('addDashboardItem-' + newComponent.canvasId, newComponent)
           }
-          if (i === dataArray.length - 1) {
+          if (
+            i === dataArray.length - 1 &&
+            (dataArray.length === 1 || (dataArray.length > 1 && dvInfo.value.type === 'dashboard'))
+          ) {
             dvMainStore.setCurComponent({
               component: newComponent,
               index: componentData.value.length - 1
@@ -213,6 +215,11 @@ function deepCopyHelper(data, idMap) {
   delete result.mEvents
   delete result.mPropValue
   delete result.mCommonBackground
+  if (result.component === 'VQuery') {
+    result.propValue?.forEach(queryItem => {
+      queryItem.id = generateID()
+    })
+  }
   if (result.component === 'Group') {
     result.propValue.forEach((component, i) => {
       result.propValue[i] = deepCopyHelper(component, idMap)
@@ -221,7 +228,7 @@ function deepCopyHelper(data, idMap) {
   // 深度拷贝Tab
   if (result.component === 'DeTabs') {
     result.propValue.forEach(tabItem => {
-      tabItem.componentData.forEach((tabComponent, i) => {
+      tabItem.componentData?.forEach((tabComponent, i) => {
         tabItem.componentData[i] = deepCopyHelper(tabComponent, idMap)
         // 对Tab的深度复制需要更换新组件的canvasId (tabsId--tabName)
         tabItem.componentData[i].canvasId = result.id + '--' + tabItem.name

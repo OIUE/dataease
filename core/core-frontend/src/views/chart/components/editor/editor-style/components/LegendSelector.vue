@@ -5,7 +5,7 @@ import icon_rightAlign_outlined from '@/assets/svg/icon_right-align_outlined.svg
 import icon_topAlign_outlined from '@/assets/svg/icon_top-align_outlined.svg'
 import icon_verticalAlign_outlined from '@/assets/svg/icon_vertical-align_outlined.svg'
 import icon_bottomAlign_outlined from '@/assets/svg/icon_bottom-align_outlined.svg'
-import { computed, onMounted, reactive, watch } from 'vue'
+import { computed, onMounted, reactive, watch, ref } from 'vue'
 import { useI18n } from '@/hooks/web/useI18n'
 import {
   COLOR_PANEL,
@@ -34,7 +34,7 @@ useEmitt({
 })
 const emit = defineEmits(['onLegendChange', 'onMiscChange'])
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 watch(
   () => props.chart.customStyle,
@@ -102,7 +102,21 @@ const changeMisc = prop => {
   emit('onMiscChange', { data: state.legendForm.miscForm, requestData: true }, prop)
 }
 
+const legendSort = ref()
+const sortAxis = computed(() => {
+  if (props.chart.type === 'line') {
+    return 'xAxisExt'
+  }
+  return 'extStack'
+})
+const legendSortDisabled = computed(() => {
+  if (props.chart?.type === 'line') {
+    return !props.chart.xAxisExt?.length
+  }
+  return !props.chart?.extStack?.length
+})
 const init = () => {
+  legendSort.value?.blur()
   const chart = JSON.parse(JSON.stringify(props.chart))
   if (chart.customStyle) {
     let customStyle = null
@@ -232,7 +246,11 @@ const getMapCustomRange = index => {
 const customSort = []
 const changeLegendSort = sort => {
   if (sort === 'custom') {
-    state.customSortField = cloneDeep(props.chart.xAxisExt?.[0])
+    if (props.chart.type === 'line') {
+      state.customSortField = cloneDeep(props.chart.xAxisExt?.[0])
+    } else {
+      state.customSortField = cloneDeep(props.chart.extStack?.[0])
+    }
     if (!state.customSortField) {
       return
     }
@@ -265,6 +283,7 @@ onMounted(() => {
     :disabled="!state.legendForm.show"
     :model="state.legendForm"
     label-position="top"
+    size="small"
   >
     <el-row :gutter="8">
       <el-col :span="12">
@@ -712,9 +731,11 @@ onMounted(() => {
       :label="t('chart.legend_sort')"
     >
       <el-select
-        :effect="themes"
         v-model="state.legendForm.sort"
         size="small"
+        :effect="themes"
+        :disabled="legendSortDisabled"
+        ref="legendSort"
         @change="changeLegendSort"
       >
         <el-option :label="t('chart.none')" value="none" />
@@ -722,7 +743,6 @@ onMounted(() => {
         <el-option :label="t('chart.desc')" value="desc" />
         <el-option
           value="custom"
-          :disabled="!chart.xAxisExt?.length"
           :label="t('visualization.custom_sort')"
           @click="changeLegendSort('custom')"
         />
@@ -740,7 +760,7 @@ onMounted(() => {
     class="dialog-css custom_sort_dialog"
   >
     <custom-sort-edit
-      field-type="xAxisExt"
+      :field-type="sortAxis"
       :chart="chart"
       :field="state.customSortField"
       :origin-sort-list="state.legendForm.customSort"

@@ -8,19 +8,22 @@ import io.dataease.api.chart.request.ChartExcelRequestInner;
 import io.dataease.auth.DeLinkPermit;
 import io.dataease.chart.constant.ChartConstants;
 import io.dataease.chart.manage.ChartDataManage;
-import io.dataease.constant.AuthConstant;
-import io.dataease.constant.CommonConstants;
+import io.dataease.constant.*;
 import io.dataease.dataset.manage.PermissionManage;
 import io.dataease.dataset.server.DatasetFieldServer;
-import io.dataease.constant.DeTypeConstants;
+import io.dataease.dataset.utils.DatasetUtils;
 import io.dataease.exception.DEException;
+import io.dataease.exportCenter.dao.auto.entity.CoreExportTask;
+import io.dataease.exportCenter.manage.ExportCenterDownLoadManage;
 import io.dataease.exportCenter.manage.ExportCenterManage;
 import io.dataease.exportCenter.util.ExportCenterUtils;
 import io.dataease.extensions.datasource.dto.DatasetTableFieldDTO;
 import io.dataease.extensions.view.dto.*;
 import io.dataease.i18n.Lang;
 import io.dataease.license.manage.F2CLicLimitedManage;
+import io.dataease.log.DeLog;
 import io.dataease.result.ResultCode;
+import io.dataease.utils.CommonBeanFactory;
 import io.dataease.utils.JsonUtil;
 import io.dataease.utils.LogUtil;
 import io.dataease.visualization.manage.VisualizationTemplateExtendDataManage;
@@ -84,7 +87,11 @@ public class ChartDataServer implements ChartDataApi {
             if (CommonConstants.VIEW_DATA_FROM.TEMPLATE.equalsIgnoreCase(chartViewDTO.getDataFrom())) {
                 return extendDataManage.getChartDataInfo(chartViewDTO.getId(), chartViewDTO);
             } else {
-                return chartDataManage.calcData(chartViewDTO);
+                DatasetUtils.viewDecode(chartViewDTO);
+                ChartViewDTO dto = chartDataManage.calcData(chartViewDTO);
+                DatasetUtils.viewEncode(dto);
+                chartDataManage.encodeData(dto);
+                return dto;
             }
         } catch (Exception e) {
             DEException.throwException(ResultCode.DATA_IS_WRONG.code(), e.getMessage() + "\n\n" + ExceptionUtils.getStackTrace(e));
@@ -101,6 +108,7 @@ public class ChartDataServer implements ChartDataApi {
             Integer[] dsTypes = null;
             //downloadType = dataset 为下载原始名字 这里做数据转换模拟 table-info类型图表导出
             if ("dataset".equals(request.getDownloadType())) {
+                viewDTO.setExportDatasetOriginData(true);
                 viewDTO.setResultMode(ChartConstants.VIEW_RESULT_MODE.ALL);
                 viewDTO.setType("table-info");
                 viewDTO.setRender("antv");
@@ -112,6 +120,11 @@ public class ChartDataServer implements ChartDataApi {
                 TypeReference<List<ChartViewFieldDTO>> listTypeReference = new TypeReference<List<ChartViewFieldDTO>>() {
                 };
                 viewDTO.setXAxis(JsonUtil.parseList(JsonUtil.toJSONString(sourceFields).toString(), listTypeReference));
+                viewDTO.getXAxis().forEach(x -> {
+                    if (x.getOrderChecked()) {
+                        x.setSort("asc");
+                    }
+                });
             }
             int curLimit = Math.toIntExact(ExportCenterUtils.getExportLimit("view"));
             int curDsLimit = Math.toIntExact(ExportCenterUtils.getExportLimit("dataset"));
@@ -122,7 +135,13 @@ public class ChartDataServer implements ChartDataApi {
             } else {
                 viewDTO.setResultCount(viewLimit);
             }
-            chartViewInfo = getData(viewDTO);
+            if (CommonConstants.VIEW_DATA_FROM.TEMPLATE.equalsIgnoreCase(viewDTO.getDataFrom())) {
+                chartViewInfo = extendDataManage.getChartDataInfo(viewDTO.getId(), viewDTO);
+            } else {
+                // 要走明细表的逻辑
+                viewDTO.setIsPlugin(false);
+                chartViewInfo = chartDataManage.calcData(viewDTO);
+            }
             List<Object[]> tableRow = (List) chartViewInfo.getData().get("sourceData");
             if ("dataset".equals(request.getDownloadType())) {
                 request.setHeader(dsHeader);
@@ -240,7 +259,7 @@ public class ChartDataServer implements ChartDataApi {
                 //设置单元格填充样式(使用纯色背景颜色填充)
                 cellStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
 
-                if ("dataset".equals(request.getDownloadType()) || request.getViewInfo().getType().equalsIgnoreCase("table-info")) {
+                if ("dataset".equals(request.getDownloadType()) || request.getViewInfo().getType().equalsIgnoreCase("table-info") || request.getViewInfo().getType().equalsIgnoreCase("table-normal")) {
                     List<Object[]> details = new ArrayList<>();
                     Sheet detailsSheet;
                     Integer sheetIndex = 1;
@@ -253,9 +272,23 @@ public class ChartDataServer implements ChartDataApi {
                         if ((details.size() + extractPageSize) > sheetLimit || i == chartViewDTO.getTotalPage()) {
                             detailsSheet = wb.createSheet("数据" + sheetIndex);
                             Integer[] excelTypes = request.getExcelTypes();
-                            details.add(0, request.getHeader());
+                            List<ChartViewFieldDTO> xAxis = new ArrayList<>();
+                            xAxis.addAll(request.getViewInfo().getXAxis());
+                            xAxis.addAll(request.getViewInfo().getYAxis());
+                            xAxis.addAll(request.getViewInfo().getXAxisExt());
+                            xAxis.addAll(request.getViewInfo().getYAxisExt());
+                            xAxis.addAll(request.getViewInfo().getExtStack());
+                            Object[] header = Arrays.stream(request.getHeader()).filter(item -> xAxis.stream().map(d -> StringUtils.isNotBlank(d.getChartShowName()) ? d.getChartShowName() : d.getName()).toList().contains(item)).collect(Collectors.toList()).toArray();
+                            details.add(0, header);
+                            List<Integer> columnIndexs = new ArrayList<>();
+                            for (int i1 = 0; i1 < xAxis.size(); i1++) {
+                                ChartViewFieldDTO xAxi = xAxis.get(i1);
+                                if (xAxi.isHide()) {
+                                    columnIndexs.add(i1);
+                                }
+                            }
+                            ExportCenterDownLoadManage.removeColumn(details, columnIndexs);
                             ViewDetailField[] detailFields = request.getDetailFields();
-                            Object[] header = request.getHeader();
                             ChartDataServer.setExcelData(detailsSheet, cellStyle, header, details, detailFields, excelTypes, request.getViewInfo(), wb);
                             sheetIndex++;
                             details.clear();
@@ -295,12 +328,21 @@ public class ChartDataServer implements ChartDataApi {
                 wb.write(outputStream);
                 outputStream.flush();
                 outputStream.close();
+
+                try {
+                    if (request.getBusiFlag().equalsIgnoreCase("dashboard")) {
+                        CommonBeanFactory.proxy(this.getClass()).exportPanelViewLog(Long.parseLong(request.getViewId()));
+                    } else {
+                        CommonBeanFactory.proxy(this.getClass()).exportScreenViewLog(Long.parseLong(request.getViewId()));
+                    }
+                } catch (Exception e) {
+                    LogUtil.error(e);
+                }
             } catch (Exception e) {
                 DEException.throwException(e);
             }
         } else {
-            exportCenterManage.addTask(request.getViewId(), "chart", request);
-            return;
+            exportCenterManage.addTask(request.getViewId(), "chart", request, request.getBusiFlag());
         }
     }
 
@@ -324,10 +366,15 @@ public class ChartDataServer implements ChartDataApi {
         xAxis.addAll(viewInfo.getXAxisExt());
         xAxis.addAll(viewInfo.getYAxisExt());
         xAxis.addAll(viewInfo.getExtStack());
+        xAxis.addAll(viewInfo.getDrillFields());
         TableHeader tableHeader = null;
         Integer totalDepth = 0;
-        if (viewInfo.getType().equalsIgnoreCase("table-normal") || viewInfo.getType().equalsIgnoreCase("table-info")) {
+        List<CellRangeAddress> mergeConfig = new ArrayList<>();
+        if (StringUtils.equalsAnyIgnoreCase(viewInfo.getType(), "table-normal", "table-info")) {
             for (ChartViewFieldDTO xAxi : xAxis) {
+                if (xAxi.isHide()) {
+                    continue;
+                }
                 if (xAxi.getDeType().equals(DeTypeConstants.DE_INT) || xAxi.getDeType().equals(DeTypeConstants.DE_FLOAT)) {
                     CellStyle formatterCellStyle = createCellStyle(wb, xAxi.getFormatterCfg(), null);
                     styles.add(formatterCellStyle);
@@ -338,13 +385,37 @@ public class ChartDataServer implements ChartDataApi {
 
             Map<String, Object> customAttr = viewInfo.getCustomAttr();
             Map<String, Object> tableHeaderMap = (Map<String, Object>) customAttr.get("tableHeader");
-            if (Boolean.valueOf(tableHeaderMap.get("headerGroup").toString())) {
-                tableHeader = JsonUtil.parseObject((String) JsonUtil.toJSONString(customAttr.get("tableHeader")), TableHeader.class);
-                for (TableHeader.ColumnInfo column : tableHeader.getHeaderGroupConfig().getColumns()) {
-                    totalDepth = Math.max(totalDepth, getDepth(column, 1));
+            if (tableHeaderMap.get("headerGroup") != null && Boolean.parseBoolean(tableHeaderMap.get("headerGroup").toString())) {
+                var tmpHeader = JsonUtil.parseObject((String) JsonUtil.toJSONString(customAttr.get("tableHeader")), TableHeader.class);
+                // 校验字段数量和顺序
+                var allAxis = new ArrayList<>(viewInfo.getXAxis().stream().filter(x -> !x.isHide()).toList());
+                if (StringUtils.equalsIgnoreCase(viewInfo.getType(), "table-normal")) {
+                    allAxis.addAll(viewInfo.getYAxis().stream().filter(x -> !x.isHide()).toList());
                 }
-                for (TableHeader.ColumnInfo column : tableHeader.getHeaderGroupConfig().getColumns()) {
-                    setWidth(column, 1);
+                if (validateHeaderGroup(tmpHeader, allAxis)) {
+                    tableHeader = tmpHeader;
+                    for (TableHeader.ColumnInfo column : tableHeader.getHeaderGroupConfig().getColumns()) {
+                        totalDepth = Math.max(totalDepth, getDepth(column, 1));
+                    }
+                    for (TableHeader.ColumnInfo column : tableHeader.getHeaderGroupConfig().getColumns()) {
+                        setWidth(column, 1);
+                    }
+                }
+            }
+            if ("table-info".equalsIgnoreCase(viewInfo.getType()) && !"dataset".equalsIgnoreCase(viewInfo.getDownloadType())) {
+                Map<String, Object> tableCell = (Map<String, Object>) viewInfo.getCustomAttr().get("tableCell");
+                Boolean mergeCells = (Boolean) tableCell.get("mergeCells");
+                if (mergeCells != null && mergeCells) {
+                    var mergeIndex = viewInfo.getXAxis().size();
+                    for (int i = 0; i < viewInfo.getXAxis().size(); i++) {
+                        if ("q".equalsIgnoreCase(viewInfo.getXAxis().get(i).getGroupType())) {
+                            mergeIndex = i;
+                            break;
+                        }
+                    }
+                    if (mergeIndex >= 1 && details.size() > 1) {
+                        mergeConfig = getMergeConfig(details.subList(1, details.size()), mergeIndex - 1, totalDepth == 0 ? 1 : totalDepth);
+                    }
                 }
             }
         }
@@ -450,10 +521,8 @@ public class ChartDataServer implements ChartDataApi {
 
                         Cell cell = row.createCell(j);
                         if (i == 0) {// 头部
-                            if (tableHeader != null) {
-                                cell.setCellValue(cellValObj.toString());
-                                cell.setCellStyle(cellStyle);
-                            }
+                            cell.setCellValue(cellValObj.toString());
+                            cell.setCellStyle(cellStyle);
                             //设置列的宽度
                             detailsSheet.setColumnWidth(j, 255 * 20);
                         } else if (cellValObj != null) {
@@ -495,9 +564,90 @@ public class ChartDataServer implements ChartDataApi {
                     }
                 }
             }
+            if (CollectionUtils.isNotEmpty(mergeConfig)) {
+                mergeConfig.forEach(detailsSheet::addMergedRegion);
+            }
         }
     }
 
+    private static List<CellRangeAddress> getMergeConfig(List<Object[]> data, int colIndex, int offsetHeight) {
+        var result = new ArrayList<CellRangeAddress>();
+        var preRange = new ArrayList<Integer[]>();
+        var initRange = new Integer[]{0, data.size() - 1};
+        preRange.add(initRange);
+        for (int curColIndex = 0; curColIndex <= colIndex; curColIndex++) {
+            var curRange = new ArrayList<Integer[]>();
+            for (int preRangeIndex = 0; preRangeIndex < preRange.size(); preRangeIndex++) {
+                var preRowRange = preRange.get(preRangeIndex);
+                var start = preRowRange[0];
+                var end = preRowRange[1];
+                var lastColValue = data.get(start)[curColIndex];
+                if (lastColValue != null) {
+                    lastColValue = lastColValue.toString();
+                } else {
+                    lastColValue = "";
+                }
+                var lastRowIndex = start;
+                for (Integer curRowIndex = start + 1; curRowIndex <= end; curRowIndex++) {
+                    var curRow = data.get(curRowIndex);
+                    var curColValue = curRow[curColIndex];
+                    if (curColValue != null) {
+                        curColValue = curColValue.toString();
+                    } else {
+                        curColValue = "";
+                    }
+                    if (!StringUtils.equals(lastColValue.toString(), curColValue.toString()) && (curRowIndex - lastRowIndex > 1)) {
+                        curRange.add(new Integer[]{lastRowIndex, curRowIndex - 1});
+                        result.add(new CellRangeAddress(lastRowIndex + offsetHeight, curRowIndex + offsetHeight - 1, curColIndex, curColIndex));
+                    }
+                    if (curRowIndex.equals(end) && curColValue.equals(lastColValue) && curRowIndex - lastRowIndex > 0) {
+                        curRange.add(new Integer[]{lastRowIndex, curRowIndex});
+                        result.add(new CellRangeAddress(lastRowIndex + offsetHeight, curRowIndex + offsetHeight, curColIndex, curColIndex));
+                    }
+                    if (!StringUtils.equals(lastColValue.toString(), curColValue.toString())) {
+                        lastColValue = curColValue;
+                        lastRowIndex = curRowIndex;
+                    }
+                }
+            }
+            preRange = curRange;
+        }
+        return result;
+    }
+
+    private static boolean validateHeaderGroup(TableHeader header, List<ChartViewFieldDTO> fields) {
+        if (header == null) {
+            return false;
+        }
+        var columns = header.getHeaderGroupConfig().getColumns();
+        if (CollectionUtils.isEmpty(columns)) {
+            return false;
+        }
+        var leafColumn = getHeaderLeafColumn(columns);
+        if (CollectionUtils.isEmpty(leafColumn) || leafColumn.size() != fields.size()) {
+            return false;
+        }
+        for (int i = 0; i < leafColumn.size(); i++) {
+            var a = leafColumn.get(i);
+            var b = fields.get(i).getDataeaseName();
+            if (!StringUtils.equals(a, b)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static List<String> getHeaderLeafColumn(List<TableHeader.ColumnInfo> columns) {
+        var result = new ArrayList<String>();
+        for (TableHeader.ColumnInfo column : columns) {
+            if (CollectionUtils.isEmpty(column.getChildren())) {
+                result.add(column.getKey());
+            } else {
+                result.addAll(getHeaderLeafColumn(column.getChildren()));
+            }
+        }
+        return result;
+    }
 
     private static Integer getDepth(TableHeader.ColumnInfo column, Integer parentDepth) {
         if (org.springframework.util.CollectionUtils.isEmpty(column.getChildren())) {
@@ -562,7 +712,7 @@ public class ChartDataServer implements ChartDataApi {
     private static String getDeFieldName(List<ChartViewFieldDTO> xAxis, String key) {
         for (ChartViewFieldDTO xAxi : xAxis) {
             if (xAxi.getDataeaseName().equals(key)) {
-                return xAxi.getName();
+                return StringUtils.isNotBlank(xAxi.getChartShowName()) ? xAxi.getChartShowName() : xAxi.getName();
             }
         }
         return "";
@@ -602,22 +752,25 @@ public class ChartDataServer implements ChartDataApi {
         if (formatter.getType().equals("auto")) {
             String[] valueSplit = String.valueOf(value).split(".");
             if (StringUtils.isEmpty(value) || !value.contains(".")) {
-                formatStr = "0";
+                formatStr = "General";
             } else {
                 formatStr = "0." + new String(new char[valueSplit.length]).replace('\0', '0');
             }
             switch (formatter.getUnit()) {
                 case 1000:
-                    formatStr = formatStr + "千";
+                    formatStr = formatStr + (formatter.getUnitLanguage().equalsIgnoreCase("ch") ? "\"千\"" : "\"K\"");
                     break;
                 case 10000:
-                    formatStr = formatStr + "万";
+                    formatStr = formatStr + "\"万\"";
                     break;
                 case 1000000:
-                    formatStr = formatStr + "百万";
+                    formatStr = formatStr + (formatter.getUnitLanguage().equalsIgnoreCase("ch") ? "\"百万\"" : "\"M\"");
                     break;
                 case 100000000:
-                    formatStr = formatStr + "'亿'";
+                    formatStr = formatStr + "\"亿\"";
+                    break;
+                case 1000000000:
+                    formatStr = formatStr + "\"B\"";
                     break;
                 default:
                     break;
@@ -629,7 +782,7 @@ public class ChartDataServer implements ChartDataApi {
                 if (formatter.getSuffix().equals("%")) {
                     formatStr = formatStr + "\"%\"";
                 } else {
-                    formatStr = formatStr + formatter.getSuffix();
+                    formatStr = formatStr + "\"" + formatter.getSuffix() + "\"";
                 }
             }
         }
@@ -641,16 +794,19 @@ public class ChartDataServer implements ChartDataApi {
             }
             switch (formatter.getUnit()) {
                 case 1000:
-                    formatStr = formatStr + "千";
+                    formatStr = formatStr + (formatter.getUnitLanguage().equalsIgnoreCase("ch") ? "\"千\"" : "\"K\"");
                     break;
                 case 10000:
-                    formatStr = formatStr + "万";
+                    formatStr = formatStr + "\"万\"";
                     break;
                 case 1000000:
-                    formatStr = formatStr + "百万";
+                    formatStr = formatStr + (formatter.getUnitLanguage().equalsIgnoreCase("ch") ? "\"百万\"" : "\"M\"");
                     break;
                 case 100000000:
-                    formatStr = formatStr + "'亿'";
+                    formatStr = formatStr + "\"亿\"";
+                    break;
+                case 1000000000:
+                    formatStr = formatStr + "\"B\"";
                     break;
                 default:
                     break;
@@ -662,7 +818,7 @@ public class ChartDataServer implements ChartDataApi {
                 if (formatter.getSuffix().equals("%")) {
                     formatStr = formatStr + "\"%\"";
                 } else {
-                    formatStr = formatStr + formatter.getSuffix();
+                    formatStr = formatStr + "\"" + formatter.getSuffix() + "\"";
                 }
             }
         } else if (formatter.getType().equals("percent")) {
@@ -681,7 +837,6 @@ public class ChartDataServer implements ChartDataApi {
         return cellStyle;
     }
 
-
     @Override
     public List<String> getFieldData(ChartViewDTO view, Long fieldId, String fieldType) throws Exception {
         return chartDataManage.getFieldData(view, fieldId, fieldType);
@@ -691,4 +846,14 @@ public class ChartDataServer implements ChartDataApi {
     public List<String> getDrillFieldData(ChartViewDTO view, Long fieldId) throws Exception {
         return chartDataManage.getDrillFieldData(view, fieldId);
     }
+
+    @DeLog(id = "#p0", ot = LogOT.EXPORT, st = LogST.PANEL)
+    public void exportPanelViewLog(Long id) {
+    }
+
+    @DeLog(id = "#p0", ot = LogOT.EXPORT, st = LogST.SCREEN)
+    public void exportScreenViewLog(Long id) {
+    }
+
+
 }

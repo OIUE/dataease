@@ -9,7 +9,6 @@ import EmptyBackground from '@/components/empty-background/src/EmptyBackground.v
 import { storeToRefs } from 'pinia'
 import { useAppStoreWithOut } from '@/store/modules/app'
 import { initCanvasData, initCanvasDataPrepare, onInitReady } from '@/utils/canvasUtils'
-import { usePermissionStoreWithOut } from '@/store/modules/permission'
 import { useMoveLine } from '@/hooks/web/useMoveLine'
 import { Icon } from '@/components/icon-custom'
 import { download2AppTemplate, downloadCanvas2 } from '@/utils/imgUtils'
@@ -21,6 +20,13 @@ import { useEmitt } from '@/hooks/web/useEmitt'
 
 import { useUserStoreWithOut } from '@/store/modules/user'
 import { useI18n } from '@/hooks/web/useI18n'
+import {
+  exportLogApp,
+  exportLogImg,
+  exportLogPDF,
+  exportLogTemplate
+} from '@/api/visualization/dataVisualization'
+import { deepCopy } from '@/utils/utils'
 const userStore = useUserStoreWithOut()
 
 const userName = computed(() => userStore.getName)
@@ -31,7 +37,6 @@ const { dvInfo, canvasViewDataInfo } = storeToRefs(dvMainStore)
 const previewCanvasContainer = ref(null)
 const dvPreviewRef = ref(null)
 const slideShow = ref(true)
-const permissionStore = usePermissionStoreWithOut()
 const dataInitState = ref(true)
 const downloadStatus = ref(false)
 const { width, node } = useMoveLine('DASHBOARD')
@@ -46,6 +51,11 @@ const props = defineProps({
     required: false,
     type: Boolean,
     default: false
+  },
+  resourceTable: {
+    required: false,
+    type: String,
+    default: 'core'
   }
 })
 
@@ -75,7 +85,7 @@ const loadCanvasData = (dvId, weight?, ext?) => {
   dataInitState.value = false
   initMethod(
     dvId,
-    { busiFlag: 'dataV' },
+    { busiFlag: 'dataV', resourceTable: 'core' },
     function ({
       canvasDataResult,
       canvasStyleResult,
@@ -91,6 +101,12 @@ const loadCanvasData = (dvId, weight?, ext?) => {
       state.dvInfo = dvInfo
       state.curPreviewGap = curPreviewGap
       dataInitState.value = true
+      // 修复铺满全屏模版导出错位问题
+      if (props.showPosition !== 'multiplexing') {
+        state.canvasDataPreviewSource = deepCopy(canvasDataResult)
+        state.canvasStylePreviewSource = deepCopy(canvasStyleResult)
+      }
+
       if (props.showPosition === 'preview') {
         dvMainStore.updateCurDvInfo(dvInfo)
         nextTick(() => {
@@ -103,23 +119,45 @@ const loadCanvasData = (dvId, weight?, ext?) => {
     }
   )
 }
-
+// 地图类图表，需要预先准备图片
+const mapChartTypes = ['bubble-map', 'flow-map', 'heat-map', 'map', 'symbolic-map']
 const download = type => {
   downloadStatus.value = true
+  const mapElementIds =
+    state.canvasDataPreview
+      ?.filter(ele => mapChartTypes.includes(ele.innerType))
+      .map(ele => ele.id) || []
+  mapElementIds.forEach(id => useEmitt().emitter.emit('l7-prepare-picture', id))
   setTimeout(() => {
     const vueDom = previewCanvasContainer.value.querySelector('.canvas-container')
     downloadCanvas2(type, vueDom, state.dvInfo.name, () => {
       downloadStatus.value = false
+      const param = {
+        id: state.dvInfo.id,
+        type: state.dvInfo.type === 'dashboard' ? 'panel' : 'screen'
+      }
+      type === 'img' ? exportLogImg(param) : exportLogPDF(param)
+      mapElementIds.forEach(id => useEmitt().emitter.emit('l7-unprepare-picture', id))
     })
   }, 200)
 }
-
 const fileDownload = (downloadType, attachParams) => {
   downloadStatus.value = true
+  const mapElementIds =
+    state.canvasDataPreview
+      ?.filter(ele => mapChartTypes.includes(ele.innerType))
+      .map(ele => ele.id) || []
+  mapElementIds.forEach(id => useEmitt().emitter.emit('l7-prepare-picture', id))
   nextTick(() => {
     const vueDom = previewCanvasContainer.value.querySelector('.canvas-container')
     download2AppTemplate(downloadType, vueDom, state.dvInfo.name, attachParams, () => {
       downloadStatus.value = false
+      const param = {
+        id: state.dvInfo.id,
+        type: state.dvInfo.type === 'dashboard' ? 'panel' : 'screen'
+      }
+      downloadType === 'app' ? exportLogApp(param) : exportLogTemplate(param)
+      mapElementIds.forEach(id => useEmitt().emitter.emit('l7-unprepare-picture', id))
     })
   })
 }
@@ -175,6 +213,8 @@ const dataVKeepSize = computed(() => {
 })
 
 const state = reactive({
+  canvasDataPreviewSource: null,
+  canvasStylePreviewSource: null,
   canvasDataPreview: null,
   canvasStylePreview: null,
   canvasViewInfoPreview: null,
@@ -250,12 +290,13 @@ onBeforeMount(() => {
         v-show="slideShow"
         :cur-canvas-type="'dataV'"
         :show-position="showPosition"
+        :resource-table="resourceTable"
         @node-click="resourceNodeClick"
       />
     </el-aside>
     <el-container
       class="preview-area"
-      :class="{ 'no-data': !hasTreeData }"
+      :class="{ 'no-data': !state.dvInfo?.id }"
       v-loading="!dataInitState"
     >
       <div @click="slideOpenChange" class="flexible-button-area" v-if="false">

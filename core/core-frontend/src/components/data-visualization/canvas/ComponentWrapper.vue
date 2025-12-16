@@ -1,28 +1,28 @@
 <script setup lang="ts">
 import { getStyle } from '@/utils/style'
 import eventBus from '@/utils/eventBus'
-import { ref, onMounted, toRefs, getCurrentInstance, computed, nextTick } from 'vue'
+import { ref, toRefs, computed, nextTick } from 'vue'
 import findComponent from '@/utils/components'
 import { downloadCanvas2, imgUrlTrans } from '@/utils/imgUtils'
 import ComponentEditBar from '@/components/visualization/ComponentEditBar.vue'
 import ComponentSelector from '@/components/visualization/ComponentSelector.vue'
 import { useEmitt } from '@/hooks/web/useEmitt'
-import { useCache } from '@/hooks/web/useCache'
 import Board from '@/components/de-board/Board.vue'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { activeWatermarkCheckUser, removeActiveWatermark } from '@/components/watermark/watermark'
 import { isMobile } from '@/utils/utils'
 import { isDashboard, isMainCanvas } from '@/utils/canvasUtils'
 import { XpackComponent } from '@/components/plugin'
-import { useAppStoreWithOut } from '@/store/modules/app'
 import DePreviewPopDialog from '@/components/visualization/DePreviewPopDialog.vue'
-const appStore = useAppStoreWithOut()
+import Icon from '../../icon-custom/src/Icon.vue'
+import replaceOutlined from '@/assets/svg/icon_replace_outlined.svg'
+import { CommonBackground } from '@/components/visualization/component-background/Types'
+import { ShorthandMode } from '@/Types'
 
 const componentWrapperInnerRef = ref(null)
 const componentEditBarRef = ref(null)
 const dvMainStore = dvMainStoreWithOut()
 const downLoading = ref(false)
-const { wsCache } = useCache('localStorage')
 const commonFilterAttrs = ['width', 'height', 'top', 'left', 'rotate']
 const dePreviewPopDialogRef = ref(null)
 const commonFilterAttrsFilterBorder = [
@@ -39,6 +39,9 @@ const commonFilterAttrsFilterBorder = [
 ]
 
 const props = defineProps({
+  curStyle: {
+    type: Object
+  },
   active: {
     type: Boolean,
     default: false
@@ -143,7 +146,6 @@ const {
   suffixId,
   scrollMain
 } = toRefs(props)
-let currentInstance
 const component = ref(null)
 const emits = defineEmits(['userViewEnlargeOpen', 'datasetParamsInit', 'onPointClick'])
 const wrapperId = 'wrapper-outer-id-' + config.value.id
@@ -153,7 +155,7 @@ const htmlToImage = () => {
   useEmitt().emitter.emit('l7-prepare-picture', config.value.id)
   downLoading.value = true
   setTimeout(() => {
-    const vueDom = componentWrapperInnerRef.value
+    const vueDom = document.getElementById(viewDemoInnerId.value)
     activeWatermarkCheckUser(viewDemoInnerId.value, 'canvas-main', scale.value / 100)
     downloadCanvas2('img', vueDom, '图表', () => {
       // do callback
@@ -168,27 +170,22 @@ const handleInnerMouseDown = e => {
   // do setCurComponent
   if (showPosition.value.includes('multiplexing')) {
     componentEditBarRef.value.multiplexingCheckOut()
-    e.stopPropagation()
-    e.preventDefault()
+    e?.stopPropagation()
+    e?.preventDefault()
   }
-  if (['popEdit', 'preview'].includes(showPosition.value) || dvMainStore.mobileInPc) {
-    onClick(e)
-    e.stopPropagation()
-    e.preventDefault()
+  if (
+    (!['rich-text'].includes(config.value.innerType) &&
+      ['popEdit', 'preview'].includes(showPosition.value)) ||
+    dvMainStore.mobileInPc
+  ) {
+    onClick()
+    if (e.target?.className?.includes?.('ed-input__inner')) return
+    e?.stopPropagation()
+    e?.preventDefault()
   }
 }
 
-onMounted(() => {
-  currentInstance = getCurrentInstance()
-  const methodName = 'componentImageDownload-' + config.value.id
-  if (!useEmitt().emitter.all.get(methodName)?.length) {
-    useEmitt().emitter.on(methodName, () => {
-      htmlToImage()
-    })
-  }
-})
-
-const onClick = e => {
+const onClick = () => {
   // 将当前点击组件的事件传播出去
   eventBus.emit('componentClick')
   dvMainStore.setInEditorStatus(true)
@@ -231,9 +228,43 @@ const componentBackgroundStyle = computed(() => {
       innerPadding,
       borderRadius
     } = config.value.commonBackground
+    const commonBackground = config.value.commonBackground as CommonBackground
+    const innerPaddingTarget = ['Group'].includes(config.value.component) ? 0 : innerPadding
+    let innerPaddingStyle = innerPaddingTarget * deepScale.value + 'px'
+    const paddingMode = commonBackground.innerPadding?.mode
+    if (paddingMode === ShorthandMode.Uniform) {
+      innerPaddingStyle = `${commonBackground.innerPadding?.top * deepScale.value}px`
+    } else if (paddingMode === ShorthandMode.Axis) {
+      innerPaddingStyle = `${commonBackground.innerPadding?.top * deepScale.value}px ${
+        commonBackground.innerPadding?.left * deepScale.value
+      }px`
+    } else if (paddingMode === ShorthandMode.PerEdge) {
+      innerPaddingStyle = `${commonBackground.innerPadding?.top * deepScale.value}px ${
+        commonBackground.innerPadding?.right * deepScale.value
+      }px ${commonBackground.innerPadding?.bottom * deepScale.value}px ${
+        commonBackground.innerPadding?.left * deepScale.value
+      }px`
+    }
+
+    let borderRadiusStyle = borderRadius + 'px'
+    const borderRadiusMode = commonBackground.borderRadius?.mode
+    if (borderRadiusMode === ShorthandMode.Uniform) {
+      borderRadiusStyle = `${commonBackground.borderRadius?.topLeft * deepScale.value}px`
+    } else if (borderRadiusMode === ShorthandMode.Axis) {
+      borderRadiusStyle = `${commonBackground.borderRadius?.topLeft * deepScale.value}px ${
+        commonBackground.borderRadius?.bottomLeft * deepScale.value
+      }px`
+    } else if (borderRadiusMode === ShorthandMode.PerEdge) {
+      borderRadiusStyle = `${commonBackground.borderRadius?.topLeft * deepScale.value}px ${
+        commonBackground.borderRadius?.topRight * deepScale.value
+      }px ${commonBackground.borderRadius?.bottomRight * deepScale.value}px ${
+        commonBackground.borderRadius?.bottomLeft * deepScale.value
+      }px`
+    }
+
     let style = {
-      padding: innerPadding * deepScale.value + 'px',
-      borderRadius: borderRadius + 'px'
+      padding: innerPaddingStyle,
+      borderRadius: borderRadiusStyle
     }
     let colorRGBA = ''
     if (backgroundColorSelect && backgroundColor) {
@@ -313,11 +344,21 @@ const eventEnable = computed(
       ['indicator', 'rich-text'].includes(config.value.innerType)) &&
     config.value.events &&
     config.value.events.checked &&
-    (isDashboard() || (!isDashboard() && !isMobile()))
+    showPosition.value !== 'canvas-multiplexing'
 )
 
+const onWrapperClickCur = e => {
+  // 指标卡为内部触发
+  if (['indicator'].includes(config.value.innerType)) {
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
+  onWrapperClick(e)
+}
+
 const onWrapperClick = e => {
-  if (eventEnable.value && showPosition.value !== 'canvas-multiplexing') {
+  if (eventEnable.value && !['edit-preview'].includes(showPosition.value)) {
     if (config.value.events.type === 'showHidden') {
       // 打开弹框区域
       nextTick(() => {
@@ -335,8 +376,14 @@ const onWrapperClick = e => {
           } else {
             window.open(url, '_blank')
           }
+          if (isMobile()) {
+            window.location.reload()
+          }
         } else {
           initOpenHandler(window.open(url, jumpType))
+          if (isDashboard() && isMobile()) {
+            window.location.reload()
+          }
         }
       } catch (e) {
         console.warn('url 格式错误:' + url)
@@ -348,8 +395,8 @@ const onWrapperClick = e => {
     } else if (config.value.events.type === 'download') {
       useEmitt().emitter.emit('canvasDownload')
     }
-    e.preventDefault()
-    e.stopPropagation()
+    e?.preventDefault()
+    e?.stopPropagation()
   }
 }
 
@@ -370,9 +417,32 @@ const freezeFlag = computed(() => {
   return (
     isMainCanvas(props.canvasId) &&
     config.value.freeze &&
+    !isMobile() &&
     scrollMain.value - config.value.style?.top > 0
   )
 })
+
+const commonParams = computed(() => {
+  return {
+    eventEnable: eventEnable.value,
+    eventType: config.value.events.type
+  }
+})
+
+const showCheck = computed(() => {
+  return dvMainStore.mobileInPc && showPosition.value === 'edit'
+})
+
+const updateFromMobile = (e, type) => {
+  if (type === 'syncPcDesign') {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+  useEmitt().emitter.emit('onMobileStatusChange', {
+    type: type,
+    value: config.value.id
+  })
+}
 </script>
 
 <template>
@@ -391,6 +461,16 @@ const freezeFlag = computed(() => {
     element-loading-text="导出中..."
     element-loading-background="rgba(255, 255, 255, 1)"
   >
+    <div
+      :title="$t('visualization.sync_pc_design')"
+      v-if="showCheck"
+      class="refresh-from-pc"
+      @click="updateFromMobile($event, 'syncPcDesign')"
+    >
+      <el-icon>
+        <Icon name="icon_replace_outlined"><replaceOutlined class="svg-icon" /></Icon>
+      </el-icon>
+    </div>
     <component-edit-bar
       v-if="!showPosition.includes('canvas') && !props.isSelector"
       class="wrapper-edit-bar"
@@ -400,6 +480,7 @@ const freezeFlag = computed(() => {
       :element="config"
       :show-position="showPosition"
       :class="{ 'wrapper-edit-bar-active': active }"
+      @componentImageDownload="htmlToImage"
       @userViewEnlargeOpen="opt => emits('userViewEnlargeOpen', opt)"
       @datasetParamsInit="() => emits('datasetParamsInit')"
     ></component-edit-bar>
@@ -421,7 +502,7 @@ const freezeFlag = computed(() => {
         class="wrapper-inner-adaptor"
         :style="slotStyle"
         :class="{ 'pop-wrapper-inner': showActive, 'event-active': eventEnable }"
-        @mousedown="onWrapperClick"
+        @mousedown="onWrapperClickCur"
       >
         <component
           :is="findComponent(config['component'])"
@@ -434,6 +515,7 @@ const freezeFlag = computed(() => {
           :dv-type="dvInfo.type"
           :canvas-view-info="canvasViewInfo"
           :style="getComponentStyleDefault(config?.style)"
+          :curStyle="curStyle"
           :prop-value="config?.propValue"
           :element="config"
           :request="config?.request"
@@ -446,7 +528,9 @@ const freezeFlag = computed(() => {
           :suffix-id="suffixId"
           :font-family="fontFamily"
           :active="active"
+          :common-params="commonParams"
           @onPointClick="onPointClick"
+          @onComponentEvent="onWrapperClick"
         />
       </div>
       <!--边框背景-->
@@ -471,6 +555,15 @@ const freezeFlag = computed(() => {
 }
 .wrapper-outer {
   position: absolute;
+  .refresh-from-pc {
+    position: absolute;
+    right: 38px;
+    top: 12px;
+    z-index: 2;
+    font-size: 16px;
+    cursor: pointer;
+    color: var(--ed-color-primary);
+  }
 }
 .wrapper-inner {
   width: 100%;

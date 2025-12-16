@@ -313,7 +313,9 @@ export class Map extends L7PlotChartView<ChoroplethOptions, Choropleth> {
       }
     })
     if (colorScale.length) {
-      options.color['value'] = colorScale.map(item => (item.color ? item.color : item))
+      options.color['value'] = colorScale.map(item =>
+        item.color ? new ColorWrapper(item.color) : new ColorWrapper(item)
+      )
       if (colorScale[0].value && !misc.mapAutoLegend) {
         options.color['scale']['domain'] = [
           minValue ?? filterEmptyMinValue(sourceData, 'value'),
@@ -352,11 +354,7 @@ export class Map extends L7PlotChartView<ChoroplethOptions, Choropleth> {
     return listDom
   }
 
-  private customConfigLegend(
-    chart: Chart,
-    options: ChoroplethOptions,
-    context: Record<string, any>
-  ): ChoroplethOptions {
+  private customConfigLegend(chart: Chart, options: ChoroplethOptions): ChoroplethOptions {
     const { basicStyle, misc } = parseJson(chart.customAttr)
     const colors = basicStyle.colors.map(item => hexColorToRGBA(item, basicStyle.alpha))
     if (basicStyle.suspension === false && basicStyle.showZoom === undefined) {
@@ -433,7 +431,7 @@ export class Map extends L7PlotChartView<ChoroplethOptions, Choropleth> {
           color: rangeColor
         })
       })
-      customLegend['customContent'] = (_: string, _items: CategoryLegendListItem[]) => {
+      customLegend['customContent'] = () => {
         if (items?.length) {
           return this.createLegendCustomContent(items)
         }
@@ -448,6 +446,9 @@ export class Map extends L7PlotChartView<ChoroplethOptions, Choropleth> {
       customLegend['customContent'] = (_: string, items: CategoryLegendListItem[]) => {
         const showItems = items?.length > 30 ? items.slice(0, 30) : items
         if (showItems?.length) {
+          if (showItems.length === 1) {
+            showItems[0].value = options.color.scale.domain.slice(0, 2)
+          }
           return this.createLegendCustomContent(showItems)
         }
         return ''
@@ -622,5 +623,17 @@ export class Map extends L7PlotChartView<ChoroplethOptions, Choropleth> {
       this.customConfigLegend,
       this.configCustomArea
     )(chart, options, context, this)
+  }
+}
+
+class ColorWrapper {
+  private color: string
+
+  constructor(color: string) {
+    this.color = color
+  }
+
+  toString(): string {
+    return this.color
   }
 }

@@ -2,7 +2,7 @@ import { deepCopy } from './utils'
 import { divide, multiply } from 'mathjs'
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { storeToRefs } from 'pinia'
-import { groupSizeStyleAdaptor } from '@/utils/style'
+import { groupItemStyleAdaptor, groupSizeStyleAdaptor } from '@/utils/style'
 import { nextTick } from 'vue'
 
 const dvMainStore = dvMainStoreWithOut()
@@ -31,29 +31,44 @@ export function changeSizeWithScale(scale) {
 }
 
 function changeComponentsSizeWithScaleCircle(componentDataCopy, scale) {
-  componentDataCopy.forEach(component => {
-    Object.keys(component.style).forEach(key => {
-      if (needToChangeDirectionAttrs.width.includes(key)) {
-        // 根据原来的比例获取样式原来的尺寸
-        // 再用原来的尺寸 * 现在的比例得出新的尺寸
-        if (!!component.style[key]) {
+  if (!componentDataCopy || !Array.isArray(componentDataCopy)) {
+    return
+  }
+  componentDataCopy?.forEach(component => {
+    if (component.style) {
+      Object.keys(component.style)?.forEach(key => {
+        if (needToChangeDirectionAttrs.width.includes(key)) {
+          // 根据原来的比例获取样式原来的尺寸
+          // 再用原来的尺寸 * 现在的比例得出新的尺寸
+          if (!!component.style[key]) {
+            component.style[key] = format(
+              getOriginStyle(component.style[key], canvasStyleData.value.scale),
+              scale
+            )
+          }
+        } else if (needToChangeDirectionAttrs.height.includes(key)) {
+          // 根据原来的比例获取样式原来的尺寸
+          // 再用原来的尺寸 * 现在的比例得出新的尺寸
           component.style[key] = format(
-            getOriginStyle(component.style[key], canvasStyleData.value.scale),
+            getOriginStyle(component.style[key], canvasStyleData.value.scaleHeight),
             scale
           )
         }
-      } else if (needToChangeDirectionAttrs.height.includes(key)) {
-        // 根据原来的比例获取样式原来的尺寸
-        // 再用原来的尺寸 * 现在的比例得出新的尺寸
-        component.style[key] = format(
-          getOriginStyle(component.style[key], canvasStyleData.value.scaleHeight),
-          scale
-        )
-      }
-    })
-
+      })
+    }
     if (['Group'].includes(component.component)) {
       groupSizeStyleAdaptor(component)
+      const parentStyle = component.style
+      component.propValue.forEach(componentInner => {
+        if (['DeTabs'].includes(componentInner.component)) {
+          componentInner.propValue.forEach(tabItem => {
+            changeComponentsSizeWithScaleCircle(tabItem.componentData, scale)
+          })
+        } else {
+          changeComponentsSizeWithScaleCircle(componentInner.propValue, scale)
+          groupItemStyleAdaptor(componentInner, parentStyle)
+        }
+      })
     } else if (['DeTabs'].includes(component.component)) {
       component.propValue.forEach(tabItem => {
         changeComponentsSizeWithScaleCircle(tabItem.componentData, scale)
@@ -107,7 +122,7 @@ export function changeRefComponentsSizeWithScale(componentDataRef, canvasStyleDa
   canvasStyleDataRef.scale = scale
 }
 
-export function changeRefComponentsSizeWithScalePoint(
+export function changeRefComponentsSizeWithScalePointCircle(
   componentDataRef,
   canvasStyleDataRef,
   scaleWidth,
@@ -115,8 +130,7 @@ export function changeRefComponentsSizeWithScalePoint(
   outScale
 ) {
   componentDataRef.forEach(component => {
-    Object.keys(component.style).forEach(key => {
-      if (key === 'fontSize' && component.style[key] === '') return
+    Object.keys(component.style)?.forEach(key => {
       if (needToChangeDirectionAttrs.width.includes(key)) {
         // 根据原来的比例获取样式原来的尺寸
         // 再用原来的尺寸 * 现在的比例得出新的尺寸
@@ -133,7 +147,32 @@ export function changeRefComponentsSizeWithScalePoint(
         )
       }
     })
+    if (component.component === 'Group') {
+      changeRefComponentsSizeWithScalePointCircle(
+        component.propValue,
+        canvasStyleDataRef,
+        scaleWidth,
+        scaleHeight,
+        outScale
+      )
+    }
   })
+}
+
+export function changeRefComponentsSizeWithScalePoint(
+  componentDataRef,
+  canvasStyleDataRef,
+  scaleWidth,
+  scaleHeight,
+  outScale
+) {
+  changeRefComponentsSizeWithScalePointCircle(
+    componentDataRef,
+    canvasStyleDataRef,
+    scaleWidth,
+    scaleHeight,
+    outScale
+  )
   canvasStyleDataRef.scale = scaleWidth
   canvasStyleDataRef.scaleWidth = scaleWidth
   canvasStyleDataRef.scaleHeight = scaleHeight

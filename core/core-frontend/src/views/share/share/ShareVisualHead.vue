@@ -12,6 +12,7 @@
       <el-button
         secondary
         v-if="props.weight >= 7"
+        :disabled="disabled"
         @click="openPopover"
         v-click-outside="clickOutPopover"
       >
@@ -242,7 +243,8 @@ const { t } = useI18n()
 const props = defineProps({
   resourceId: propTypes.string.def(''),
   resourceType: propTypes.string.def(''),
-  weight: propTypes.number.def(0)
+  weight: propTypes.number.def(0),
+  disabled: propTypes.bool.def(false)
 })
 const popoverVisible = ref(false)
 const pwdRef = ref(null)
@@ -273,6 +275,14 @@ const state = reactive({
 watch(
   () => props.resourceId,
   () => {
+    shareEnable.value = false
+    state.detailInfo = {
+      id: '',
+      uuid: '',
+      pwd: '',
+      exp: 0,
+      autoPwd: true
+    }
     popoverVisible.value = false
   }
 )
@@ -294,6 +304,7 @@ const hideShare = async () => {
     return
   }
 }
+
 const clickOutPopover = e => {
   if (
     !popoverVisible.value ||
@@ -821,9 +832,9 @@ defineExpose({
     margin-right: 4px;
   }
   .done-finish {
-    color: #3370ff;
+    color: var(--ed-color-primary, #3370ff);
     &:hover {
-      background-color: #3370ff1a !important;
+      background-color: var(--ed-color-primary-1a, #3370ff1a) !important;
     }
   }
   .input-suffix-btn {

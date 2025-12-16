@@ -20,12 +20,7 @@ import {
 import { cloneDeep, defaultsDeep } from 'lodash-es'
 import { ElIcon, ElInput } from 'element-plus-secondary'
 import Icon from '@/components/icon-custom/src/Icon.vue'
-import { hexColorToRGBA } from '@/views/chart/components/js/util'
-import { storeToRefs } from 'pinia'
-import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { useAppearanceStoreWithOut } from '@/store/modules/appearance'
-const dvMainStore = dvMainStoreWithOut()
-const { batchOptStatus } = storeToRefs(dvMainStore)
 const appearanceStore = useAppearanceStoreWithOut()
 
 const { t } = useI18n()
@@ -46,7 +41,7 @@ const props = defineProps({
 
 const emit = defineEmits(['onIndicatorChange', 'onBasicStyleChange'])
 const toolTip = computed(() => {
-  return props.themes === 'dark' ? 'ndark' : 'dark'
+  return props.themes === 'dark' ? 'light' : 'dark'
 })
 const predefineColors = COLOR_PANEL
 const fontFamily = CHART_FONT_FAMILY_ORIGIN.concat(
@@ -61,10 +56,15 @@ const state = reactive({
   indicatorValueForm: JSON.parse(JSON.stringify(DEFAULT_INDICATOR_STYLE)),
   basicStyleForm: {} as ChartBasicStyle
 })
-
 const fontSizeList = computed(() => {
   const arr = []
   for (let i = 10; i <= 60; i = i + 2) {
+    arr.push({
+      name: i + '',
+      value: i
+    })
+  }
+  for (let i = 70; i <= 210; i += 10) {
     arr.push({
       name: i + '',
       value: i
@@ -126,6 +126,7 @@ defineExpose({ getFormData })
       :disabled="!state.indicatorValueForm.show"
       :model="state.indicatorValueForm"
       label-position="top"
+      size="small"
     >
       <el-form-item
         class="form-item"

@@ -1,15 +1,14 @@
 import { cos, sin } from '@/utils/translate'
 import {
-  CHART_FONT_FAMILY_MAP,
   CHART_FONT_FAMILY_MAP_TRANS,
   DEFAULT_COLOR_CASE,
-  DEFAULT_COLOR_CASE_DARK,
-  DEFAULT_INDICATOR_STYLE
+  DEFAULT_COLOR_CASE_DARK
 } from '@/views/chart/components/editor/util/chart'
 
 import { dvMainStoreWithOut } from '@/store/modules/data-visualization/dvMain'
 import { useEmitt } from '@/hooks/web/useEmitt'
 import { defaultTo, merge } from 'lodash-es'
+import { formatterViewInfo } from '@/views/chart/components/js/formatter'
 const dvMainStore = dvMainStoreWithOut()
 
 export const LIGHT_THEME_COLOR_MAIN = '#000000'
@@ -295,7 +294,14 @@ export const THEME_ATTR_TRANS_MAIN = {
     color: 'color',
     proportionSeriesFormatter: ['color']
   },
-  tooltip: ['color']
+  tooltip: ['color'],
+  misc: {
+    bullet: {
+      bar: {
+        target: ['fill']
+      }
+    }
+  }
 }
 
 export const THEME_ATTR_TRANS_MAIN_SYMBOL = {
@@ -477,8 +483,8 @@ export function adaptTitleFontFamilyAll(fontFamily) {
         }
       })
     } else if (item.component === 'DeTabs') {
-      item.propValue.forEach(tabItem => {
-        tabItem.componentData.forEach(tabComponent => {
+      item.propValue?.forEach(tabItem => {
+        tabItem.componentData?.forEach(tabComponent => {
           if (tabComponent.component === 'UserView') {
             const viewDetails = dvMainStore.canvasViewInfo[tabComponent.id]
             adaptTitleFontFamily(fontFamily, viewDetails)
@@ -497,9 +503,18 @@ export function adaptCurThemeCommonStyle(component) {
   // 背景融合-Begin 如果是大屏['CanvasBoard', 'CanvasIcon', 'Picture']组件不需要设置背景
   if (
     dvMainStore.dvInfo.type === 'dataV' &&
-    ['CanvasBoard', 'CanvasIcon', 'Picture', 'Group', 'SvgTriangle', 'SvgStar'].includes(
-      component.component
-    )
+    [
+      'CanvasBoard',
+      'CanvasIcon',
+      'Picture',
+      'Group',
+      'SvgTriangle',
+      'SvgStar',
+      'RectShape',
+      'CircleShape',
+      'DeDecoration',
+      'DynamicBackground'
+    ].includes(component.component)
   ) {
     component.commonBackground['backgroundColorSelect'] = false
     component.commonBackground['innerPadding'] = 0
@@ -522,13 +537,14 @@ export function adaptCurThemeCommonStyle(component) {
     // 图表-Begin
     const curViewInfo = dvMainStore.canvasViewInfo[component.id]
     adaptCurTheme(curViewInfo.customStyle, curViewInfo.customAttr)
+    formatterViewInfo(curViewInfo, dvMainStore.canvasStyleData.component.formatterItem)
     useEmitt().emitter.emit('renderChart-' + component.id, curViewInfo)
     // 图表-Begin
   } else if (component.component === 'Group') {
     component.propValue.forEach(groupItem => {
       adaptCurThemeCommonStyle(groupItem)
     })
-  } else if (component.component === 'DeTabs') {
+  } else if (['DeTabs', 'DeScreen'].includes(component.component)) {
     if (dvMainStore.canvasStyleData.dashboard.themeColor === 'light') {
       component.style.headFontColor = LIGHT_THEME_COLOR_MAIN
       component.style.headFontActiveColor = LIGHT_THEME_COLOR_MAIN
@@ -536,8 +552,8 @@ export function adaptCurThemeCommonStyle(component) {
       component.style.headFontColor = DARK_THEME_COLOR_MAIN
       component.style.headFontActiveColor = DARK_THEME_COLOR_MAIN
     }
-    component.propValue.forEach(tabItem => {
-      tabItem.componentData.forEach(tabComponent => {
+    component.propValue?.forEach(tabItem => {
+      tabItem.componentData?.forEach(tabComponent => {
         adaptCurThemeCommonStyle(tabComponent)
       })
     })

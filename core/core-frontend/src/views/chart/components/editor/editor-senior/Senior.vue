@@ -9,7 +9,7 @@ import Threshold from '@/views/chart/components/editor/editor-senior/components/
 import MapMapping from '@/views/chart/components/editor/editor-senior/components/MapMapping.vue'
 import CollapseSwitchItem from '@/components/collapse-switch-item/src/CollapseSwitchItem.vue'
 import { useAppStoreWithOut } from '@/store/modules/app'
-import { computed, onMounted, PropType, ref, toRefs, watch } from 'vue'
+import { computed, PropType, ref, toRefs, watch } from 'vue'
 import LinkJumpSet from '@/components/visualization/LinkJumpSet.vue'
 import LinkageSet from '@/components/visualization/LinkageSet.vue'
 import { canvasSave } from '@/utils/canvasUtils'
@@ -36,7 +36,7 @@ import { Icon } from 'vant'
 import CommonEvent from '@/custom-component/common/CommonEvent.vue'
 const dvMainStore = dvMainStoreWithOut()
 
-const { nowPanelTrackInfo, nowPanelJumpInfo, dvInfo, componentData, curComponent, batchOptStatus } =
+const { nowPanelTrackInfo, nowPanelJumpInfo, dvInfo, curComponent, batchOptStatus } =
   storeToRefs(dvMainStore)
 
 const { t } = useI18n()
@@ -167,7 +167,7 @@ const linkJumpSetOpen = () => {
   }
   //跳转设置需要先触发保存
   canvasSave(() => {
-    linkJumpRef.value.dialogInit({ id: chart.value.id })
+    linkJumpRef.value.dialogInit({ id: chart.value.id, type: chart.value.type })
   })
 }
 const linkageSetOpen = () => {
@@ -223,7 +223,7 @@ const appStore = useAppStoreWithOut()
 const isDataEaseBi = computed(() => appStore.getIsDataEaseBi)
 
 const removeLinkageSenior = () => {
-  removeLinkage({ dvId: dvInfo.value.id, sourceViewId: chart.value.id }).then(rsp => {
+  removeLinkage({ dvId: dvInfo.value.id, sourceViewId: chart.value.id }).then(() => {
     // 刷新联动信息
     getPanelAllLinkageInfo(dvInfo.value.id).then(rsp => {
       dvMainStore.setNowPanelTrackInfo(rsp.data)
@@ -232,7 +232,7 @@ const removeLinkageSenior = () => {
 }
 
 const removeJumpSenior = () => {
-  removeJumpSet({ sourceDvId: dvInfo.value.id, sourceViewId: chart.value.id }).then(rspCur => {
+  removeJumpSet({ sourceDvId: dvInfo.value.id, sourceViewId: chart.value.id }).then(() => {
     // 刷新跳转信息
     queryVisualizationJumpInfo(dvInfo.value.id).then(rsp => {
       dvMainStore.setNowPanelJumpInfo(rsp.data)
@@ -334,6 +334,7 @@ const removeJumpSenior = () => {
             :chart="chart"
             :themes="themes"
             :is-screen="dvInfo.type === 'dataV'"
+            :resource-table="'snapshot'"
             jsname="L2NvbXBvbmVudC90aHJlc2hvbGQtd2FybmluZy9TZW5pb3JIYW5kbGVy"
           />
 

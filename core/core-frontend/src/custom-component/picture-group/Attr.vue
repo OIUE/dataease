@@ -8,8 +8,7 @@ import PictureGroupUploadAttr from '@/custom-component/picture-group/PictureGrou
 import PictureGroupDatasetSelect from '@/custom-component/picture-group/PictureGroupDatasetSelect.vue'
 import CarouselSetting from '@/custom-component/common/CarouselSetting.vue'
 import PictureGroupThreshold from '@/custom-component/picture-group/PictureGroupThreshold.vue'
-
-const props = defineProps({
+defineProps({
   themes: {
     type: String as PropType<EditorTheme>,
     default: 'dark'
@@ -32,6 +31,7 @@ const { curComponent, canvasViewInfo, mobileInPc, batchOptStatus } = storeToRefs
       <picture-group-upload-attr
         :themes="themes"
         :element="curComponent"
+        :view="canvasViewInfo[curComponent ? curComponent.id : 'default']"
         v-if="!mobileInPc && !batchOptStatus"
       ></picture-group-upload-attr>
       <template v-slot:carousel v-if="!mobileInPc">
